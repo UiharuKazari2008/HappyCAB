@@ -688,7 +688,7 @@ void runtime() {
       const String power = getPowerAuth();
       displayIconDualMessage(1, false, false, (power == "Active") ? 491 : 490, "System Power", power);
       displayState = 1;
-  } else {
+  } else if (currentPowerState0 != -1) {
     if (displayState != 0 && current_time < 1) {
       displayIconMessage(1, true, true, 250, "チュウニズム");
       displayState = 0;
