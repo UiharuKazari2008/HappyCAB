@@ -5,7 +5,7 @@
 #include <Adafruit_DS3502.h>
 #include <Adafruit_NeoPixel.h>
 #include <FastLED.h>
-#include <HTTPClient.h>
+#include <SoftwareSerial.h>
 #include "melody.h"
 
 const char* ssid = "Radio Noise AX";
@@ -32,9 +32,12 @@ const int numberRelays = 5;
 const int controlRelays[5] = { 12, 14, 27, 26, 25 };
 // Fan Controller
 const int fanPWM = 13;
-// Aux
-const int coinBlocker = 16;
+// Card Reader Communication
+const int cardReaderRX = 39;
+const int cardReaderTX = 16;
+EspSoftwareSerial::UART cardReaderSerial;
 bool coinEnable = false;
+int cardReaderState = -1;
 // Display Switch
 // 23 - Select
 // 15 - State
@@ -94,20 +97,31 @@ int warning_tone[] = {
 int warning_tone_dur[] = {
   8, 8, 8
 };
+int warning_tone_long[] = {
+  NOTE_A5, NOTE_F5
+};
+int warning_tone_long_dur[] = {
+  4, 4
+};
 int boot_tone[] = {
   NOTE_F5, NOTE_G5, NOTE_A5, NOTE_B5
 };
 int boot_tone_dur[] = {
   8, 8, 8, 4
 };
-// Kiosk API for PC
-const char *hostURL = "http://192.168.100.16:6833/action/";
 // Occupancy and Timer
+int requestedPowerState0 = -1;
 const int inactivityMinTimeout = 45;
 const int shutdownDelayMinTimeout = 5;
-unsigned long previousOccupancyMillis = 0; 
+unsigned long previousInactivityMillis = 0; 
+unsigned long previousShutdownMillis = 0; 
+bool inactivityTimeout = true;
 
+bool ready_to_boot = false;
+String inputString = ""; 
 int currentVolume = 0;
+bool muteVolume = false;
+int minimumVolume = 10;
 int currentGameSelected0 = 1;
 int currentPowerState0 = -1;
 int currentLEDState = 0;
@@ -120,6 +134,9 @@ U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0);
 Adafruit_DS3502 ds3502 = Adafruit_DS3502();
 TaskHandle_t Task1;
 TaskHandle_t Task2;
+TaskHandle_t Task3;
+TaskHandle_t Task4;
+TaskHandle_t Task5;
 
 void checkWiFiConnection() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -145,16 +162,17 @@ void checkWiFiConnection() {
 void setup() {
   pinMode(displayMainSelect, OUTPUT);
   digitalWrite(displayMainSelect, HIGH);
+  inputString.reserve(200); 
   Serial.begin(115200);
   u8g2.begin();
   u8g2.enableUTF8Print();
-  bootScreen("HappyCAB MCU");
-  delay(5000);
   bootScreen("HARDWARE");
   pinMode(powerToggleRelay0, OUTPUT);
   pinMode(fanPWM, OUTPUT);
   pinMode(gameSelectRelay0, OUTPUT);
-  pinMode(coinBlocker, INPUT);
+  pinMode(cardReaderRX, INPUT_PULLDOWN);
+  pinMode(cardReaderTX, OUTPUT);
+  digitalWrite(cardReaderTX, LOW);
   pinMode(displayMainLDR, INPUT);
   digitalWrite(gameSelectRelay0, HIGH);
   digitalWrite(powerToggleRelay0, HIGH);
@@ -187,46 +205,112 @@ void setup() {
   bootScreen("NETWORK");
   checkWiFiConnection();
 
+  boot("CR_LINK");
+  cardReaderSerial.begin(9600, SWSERIAL_8N1, cardReaderRX, cardReaderTX, false);
+  if (!cardReaderSerial) {
+    bootScreen("CARDREADER_FAIL_1");
+    while (1) { // Don't continue with invalid configuration
+      delay (1000);
+    }
+  } 
+
+  bootScreen("RESET_CR");
+  digitalWrite(cardReaderTX, LOW);
+  delay(500);
+  for (int i = 0; i < 3; i++) {
+    digitalWrite(cardReaderTX, HIGH);
+    delay(100);
+    digitalWrite(cardReaderTX, LOW);
+    delay(100);
+    digitalWrite(cardReaderTX, HIGH);
+    delay(1300);
+    digitalWrite(cardReaderTX, LOW);
+    delay(500);
+  }
+
+  bootScreen("PC_LINK");
+  xTaskCreatePinnedToCore(
+                    pingLoop,   /* Task function. */
+                    "pingTask",     /* name of task. */
+                    10000,       /* Stack size of task */
+                    NULL,        /* parameter of the task */
+                    1,           /* priority of the task */
+                    &Task3,      /* Task handle to keep track of created task */
+                    0);          /* pin task to core 1 */
+  while (!ready_to_boot) {
+    kioskTest();
+    delay(100);
+  }
+
+
   bootScreen("DEFAULTS");
   currentVolume = 30;
+  ds3502.setWiperDefault(30);
   ds3502.setWiper(30);
   displayMainState = (digitalRead(displayMainLDR) == LOW);
   kioskModeRequest("StopAll");
+  delay(2000);
 
   bootScreen("REMOTE_ACCESS");
-  server.on("/setVolume", [=]() {
-    String response = "UNCHANGED";
+  server.on("/volume/set", [=]() {
     if (server.hasArg("wiper")) {
       int _volVal = server.arg("wiper").toInt();
       if (_volVal > 0 && _volVal <= 127) {
         currentVolume = _volVal;
-        response = "SET TO VALUE ";
-        response += currentVolume;
+        muteVolume = false;
+        server.send(200, "text/plain", String(currentVolume));
+      }
+    } else if (server.hasArg("down")) {
+      int _volVal = server.arg("down").toInt();
+      if (_volVal > 0 && _volVal <= 100) {
+        int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
+        current_percent -= _volVal;
+        currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
+        muteVolume = false;
+        server.send(200, "text/plain", String(current_percent));
+      }
+    } else if (server.hasArg("up")) {
+      int _volVal = server.arg("up").toInt();
+      if (_volVal > 0 && _volVal <= 100) {
+        int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
+        current_percent += _volVal;
+        currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
+        muteVolume = false;
+        server.send(200, "text/plain", String(current_percent));
       }
     } else if (server.hasArg("percent")) {
       int _volVal = server.arg("percent").toInt();
       if (_volVal > 0 && _volVal <= 100) {
-        currentVolume = map(_volVal, 0, 100, 0, 127);
-        response = "SET TO ";
-        response += _volVal;
-        response += "%";
+        currentVolume = map(_volVal, 0, 100, minimumVolume, 127);
+        muteVolume = false;
+        server.send(200, "text/plain", String(_volVal));
+      }
+    } else if (server.hasArg("mute")) {
+      String _muteVal = server.arg("mute");
+      if (server.hasArg("invert")) {
+        muteVolume = (_muteVal != "true");
+        server.send(200, "text/plain", "OK");
+      } else {
+        muteVolume = (_muteVal == "true");
+        server.send(200, "text/plain", "OK");
       }
     }
-    ds3502.setWiper(currentVolume);
-    server.send(200, "text/plain", response);
+    ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
   });
-  server.on("/getVolume", [=]() {
+  server.on("/volume", [=]() {
     String response = "";
-    response += currentVolume;
+    if (server.hasArg("mute")) {
+      if (server.hasArg("invert")) {
+        response += ((muteVolume == true) ? "0" : "1");
+      } else {
+        response += ((muteVolume == true) ? "1" : "0");
+      }
+    } else {
+      response += map(currentVolume, minimumVolume, 127, 0, 100);
+    }
     server.send(200, "text/plain", response);
   });
-  server.on("/getVolumePercent", [=]() {
-    String response = "";
-    response += map(currentVolume, 0, 127, 0, 100);
-    server.send(200, "text/plain", response);
-  });
-
-  server.on("/setFan", [=]() {
+  server.on("/fan/set", [=]() {
     String response = "UNCHANGED";
     int fanSpeed = -1;
     if (server.hasArg("percent")) {
@@ -243,33 +327,33 @@ void setup() {
     }
     server.send(200, "text/plain", response);
   });
-  server.on("/getFan", [=]() {
+  server.on("/fan", [=]() {
     String response = "";
     response += map(currentFanSpeed, 0, 255, 0, 100);
     server.send(200, "text/plain", response);
   });
 
-  server.on("/getDisplayState", [=]() {
-    String assembledOutput = "";
-    assembledOutput += ((displayMainSelect == true) ? "PC" : "GAME");
-    server.send(200, "text/plain", assembledOutput);
-  });
-  server.on("/setDisplayPC", [=]() {
+  server.on("/display/pc", [=]() {
     setDisplayState(true);
     server.send(200, "text/plain", (displayMainSelect == true) ? "UNCHANGED" : "OK");
   });
-  server.on("/setDisplayGame", [=]() {
+  server.on("/display/game", [=]() {
     setDisplayState(false);
     server.send(200, "text/plain", (displayMainSelect == false) ? "UNCHANGED" : "OK");
   });
-  server.on("/setDisplay", [=]() {
+  server.on("/display/switch", [=]() {
     String assembledOutput = "";
     pushDisplaySwitch();
     assembledOutput += ((displayMainSelect == false) ? "PC" : "AUX");
     server.send(200, "text/plain", assembledOutput);
   });
+  server.on("/display", [=]() {
+    String assembledOutput = "";
+    assembledOutput += ((displayMainSelect == true) ? "PC" : "GAME");
+    server.send(200, "text/plain", assembledOutput);
+  });
   
-  server.on("/setEthSelects", [=]() {
+  server.on("/network/set/all", [=]() {
     for (int i=0; i < server.args(); i++) {
       if (server.argName(i) == "ethNum") {
         const String ethVal = server.arg(i);
@@ -293,7 +377,7 @@ void setup() {
     }
     server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
   });
-  server.on("/setEthSelect", [=]() {
+  server.on("/network/set", [=]() {
     String assembledOutput = "";
     int ethNum = 0;
     String ethVal = "";
@@ -304,24 +388,13 @@ void setup() {
         ethVal = server.arg(i).toInt();
     }
     if (digitalRead(ethSensors[ethNum]) == ((ethVal == "1") ? LOW : HIGH)) {
-      if (ethNum == 1 && currentPowerState0 == 1) {
-        setSysBoardPower(false);
-        if (pending_release_display == false) {
-          setDisplayState(true);
-          startLoadingScreen();
-        }
-        delay(800);
-      }
-      pushEthSwitch(ethNum);
-      if (ethNum == 1 && currentPowerState0 == 1) {
-        setSysBoardPower(true);
-      }
+      setEthernetState(ethNum, ethVal);
       server.send(200, "text/plain", (ethVal == "1" && currentPowerState0 == 1) ? "REBOOTING" : "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/getEthSelect", [=]() {
+  server.on("/network", [=]() {
     String assembledOutput = "";
     int ethNum = 0;
     for (int i=0; i < server.args(); i++) {
@@ -334,89 +407,104 @@ void setup() {
     server.send(200, "text/plain", assembledOutput);
   });
 
-  server.on("/enableOmnimix", [=]() {
+  server.on("/select/game/omni", [=]() {
     if (currentGameSelected0 == 0) {
-      if (currentPowerState0 == 1) {
-        setSysBoardPower(false);
-        delay(800);
-        if (pending_release_display == false) {
-          setDisplayState(true);
-          startLoadingScreen();
-        }
-      }
-      setOmnimixState(true, true);
-      if (currentPowerState0 == 1) {
-        setSysBoardPower(true);
-      }
+      setGameDisk1();
       server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/disableOmnimix", [=]() {
+  server.on("/select/game/base", [=]() {
     if (currentGameSelected0 == 1) {
-      if (currentPowerState0 == 1) {
-        setSysBoardPower(false);
-        if (pending_release_display == false) {
-          setDisplayState(true);
-          startLoadingScreen();
-        }
-        delay(800);
-      }
-      setOmnimixState(false, true);
-      if (currentPowerState0 == 1) {
-        setSysBoardPower(true);
-      }
+      setGameDisk0();
       server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/getOmnimix", [=]() {
+  server.on("/select/game", [=]() {
     String const val = getGameSelect();
     server.send(200, "text/plain", val);
   });
   
-  server.on("/setMasterOff", [=]() {
+  server.on("/power/off", [=]() {
     server.send(200, "text/plain", (currentPowerState0 == -1) ? "UNCHNAGED" : "OK");
     setMasterPowerOff();
     currentPowerState0 = -1;
   });
-  server.on("/setMasterOn", [=]() {
-    if (currentPowerState0 == -1) {
+  server.on("/power/standby", [=]() {
+    if (currentPowerState0 == 1) {
+      setGameOff();
+      server.send(200, "text/plain", "OK");
+    } else if (currentPowerState0 == -1) {
       setMasterPowerOn();
       server.send(200, "text/plain", "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/setGameOff", [=]() {
-    server.send(200, "text/plain", (currentPowerState0 != 1) ? "UNCHNAGED" : "OK");
-    setGameOff();
-    server.send(200, "text/plain", "OK");
-  });
-  server.on("/setGameWarning", [=]() {
-    server.send(200, "text/plain", "OK");
-    shuttingDownLEDState();
-  });
-  server.on("/setGameOn", [=]() {
+  server.on("/power/on", [=]() {
     server.send(200, "text/plain", (currentPowerState0 == 1) ? "UNCHNAGED" : "OK");
     setGameOn();
   });
-  server.on("/getPowerState", [=]() {
+  server.on("/request/standby", [=]() {
+    server.send(200, "text/plain", "OK");
+    if (currentPowerState0 == 1 && coinEnable == false) {
+      if (server.hasArg("nonauthoritive")) {
+
+      } else {
+        setGameOff();
+      }
+    } else if (currentPowerState0 == 1 && coinEnable == true) {
+      if (server.hasArg("nonauthoritive")) {
+      } else {
+        shuttingDownLEDState(1);
+      }
+    } else if (currentPowerState0 == -1) {
+      setMasterPowerOn();
+    }
+  });
+  server.on("/request/off", [=]() {
+    server.send(200, "text/plain", "OK");
+    if (currentPowerState0 == 1 && coinEnable == false) {
+      setGameOff();
+    } else if (currentPowerState0 == 1 && coinEnable == true) {
+      shuttingDownLEDState(0);
+    } else if (currentPowerState0 == 0) {
+      setMasterPowerOff();
+    }
+  });
+
+  server.on("/power", [=]() {
     String const val = getPowerAuth();
     server.send(200, "text/plain", val);
   });
-  server.on("/getSystemState", [=]() {
-    String const val = getPowerAuth();
-    server.send(200, "text/plain", (currentPowerState0 != -1) ? "Enabled" : "Disabled");
+  server.on("/master_power", [=]() {
+    server.send(200, "text/plain", (requestedPowerState0 == 0) ? "Warning" : ((currentPowerState0 != -1) ? "Enabled" : "Disabled"));
   });
-  server.on("/getPowerAuth", [=]() {
-    String const val = (currentPowerState0 == 1) ? "Enabled" : "Disabled";
-    server.send(200, "text/plain", val);
+  server.on("/game_power", [=]() {
+    server.send(200, "text/plain", (requestedPowerState0 >= 0) ? "Warning" : ((currentPowerState0 == 1) ? "Enabled" : "Disabled"));
   });
   
-  server.on("/setMarqueeOn", [=]() {
+  server.on("/timeout/on", [=]() {
+    if (inactivityTimeout == false) {
+      inactivityTimeout == true;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/timeout/off", [=]() {
+     if (inactivityTimeout == true) {
+      inactivityTimeout == false;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+
+  server.on("/marquee/on", [=]() {
     if (currentMarqueeState == 0) {
       setMarqueeState(true, true);
       server.send(200, "text/plain", "OK");
@@ -424,7 +512,7 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/setMarqueeOff", [=]() {
+  server.on("/marquee/off", [=]() {
     if (currentMarqueeState == 1) {
       setMarqueeState(false, true);
       server.send(200, "text/plain", "OK");
@@ -432,7 +520,7 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/getMarquee", [=]() {
+  server.on("/marquee", [=]() {
     server.send(200, "text/plain", ((currentMarqueeState == 0) ? (currentPowerState0 == 1) ? "Enabled" : "Disabled" : "Enabled"));
   });
 
@@ -443,7 +531,7 @@ void setup() {
     server.sendHeader("Access-Control-Allow-Methods", "GET");
     server.sendHeader("Access-Control-Max-Age", "10000");
     server.send(200, "text/plain", "LED Data Sent");
-    if (pending_release_leds == false) {
+    if (pending_release_leds == false && currentPowerState0 != 1) {
       int brightness = 64;
       int bankSelect = 0;
       if (server.hasArg("ledBrightness")) {
@@ -479,7 +567,7 @@ void setup() {
     server.sendHeader("Access-Control-Allow-Methods", "GET");
     server.sendHeader("Access-Control-Max-Age", "10000");
     server.send(200, "text/plain", "LED Data Sent");
-    if (pending_release_leds == false) {
+    if (pending_release_leds == false && currentPowerState0 != 1) {
       int brightness = 64;
       int bankSelect = 0;
       brightness = server.arg("ledBrightness").toInt();
@@ -505,33 +593,19 @@ void setup() {
       handleSetLedColor(ledValue, bankSelect, (server.hasArg("transition_time")));
     }
   });
-  server.on("/getLEDState", [=]() {
+  server.on("/state", [=]() {
     server.send(200, "text/plain", (currentLEDState == 0)  ? "MCU" : "GAME");
   });
-  server.on("/returnLED", [=]() {
+  server.on("/state/return", [=]() {
     String ledValues = server.arg("ledValues");  // Get the LED values from the URL parameter
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type X-Requested-With");
     server.sendHeader("Access-Control-Allow-Methods", "GET");
     server.sendHeader("Access-Control-Max-Age", "10000");
     server.send(200, "text/plain", "LED Returned to owner");
-    setLEDControl((currentPowerState0 != 1));
-    if (currentLEDState == 0) {
-      delay(800);
-      copyLEDBuffer();
-    }
-    setDisplayState(false);
-    melodyPlay = -1;
-    loopMelody = -1;
-    currentNote = 0;
-    previousMelodyMillis = 0;
-    startMelody = false;
-    pending_release_leds = false;
-    pending_release_display = false;
-    animation_state = -1;
-    animation_mode = -1;
+    resetState();
   });
-  server.on("/resetLED", [=]() {
+  server.on("/state/reset", [=]() {
     String ledValues = server.arg("ledValues");  // Get the LED values from the URL parameter
     server.sendHeader("Access-Control-Allow-Origin", "*");
     server.sendHeader("Access-Control-Allow-Headers", "Content-Type X-Requested-With");
@@ -548,8 +622,37 @@ void setup() {
   refresh_time = esp_timer_get_time() / 1000000;
 
   delay(250);
-  bootScreen("SYS_PWR_ON");
-  setMasterPowerOn();
+  //bootScreen("SYS_PWR_ON");
+  //setMasterPowerOn();
+  //delay(500);
+  bootScreen("BOOT_PCLC");
+  xTaskCreatePinnedToCore(
+                  serialLoop,   /* Task function. */
+                  "serialMonitor",     /* name of task. */
+                  10000,       /* Stack size of task */
+                  NULL,        /* parameter of the task */
+                  1,           /* priority of the task */
+                  &Task3,      /* Task handle to keep track of created task */
+                  0);          /* pin task to core 1 */
+  delay(500);
+  bootScreen("BOOT_CRLC");
+  xTaskCreatePinnedToCore(
+                  cardReaderRXLoop,   /* Task function. */
+                  "cardReaderRX",     /* name of task. */
+                  10000,       /* Stack size of task */
+                  NULL,        /* parameter of the task */
+                  1,           /* priority of the task */
+                  &Task4,      /* Task handle to keep track of created task */
+                  0);          /* pin task to core 1 */
+  delay(500);
+  xTaskCreatePinnedToCore(
+                  cardReaderTXLoop,   /* Task function. */
+                  "cardReaderTX",     /* name of task. */
+                  10000,       /* Stack size of task */
+                  NULL,        /* parameter of the task */
+                  1,           /* priority of the task */
+                  &Task5,      /* Task handle to keep track of created task */
+                  0);          /* pin task to core 1 */
   delay(500);
   bootScreen("BOOT_CPU2");
   xTaskCreatePinnedToCore(
@@ -563,26 +666,78 @@ void setup() {
   delay(500);
 }
 
+bool ignore_next_state = false;
 void loop() {
   checkWiFiConnection();
   server.handleClient();
-  coinEnable = (digitalRead(coinBlocker) == LOW);
-  displayMainState = (digitalRead(displayMainLDR) == LOW);
+  unsigned long currentMillis = millis();\
+  // Proccess Reported Card Reader State
+  switch (cardReaderState) {
+    case 1:
+      coinEnable = false;
+      ignore_next_state = false;
+      break;
+    case 3:
+      coinEnable = true;
+      ignore_next_state = false;
+      break;
+    case 5:
+      if (ignore_next_state == false) {
+        ignore_next_state = true;
+        resetInactivityTimer();
+      }
+      break;
+    case 7:
+      if (ignore_next_state == false) {
+        ignore_next_state = true;
+        setGameOn();
+      }
+      break;
+    default:
+      break;
+  }
+  // Handle LED Handover
   if (pending_release_leds == true && coinEnable == true) {
     setLEDControl(false);
     pending_release_leds = false;
     transition_leds = false;
     animation_state = -1;
     animation_mode = -1;
+    currentStep = 0;
   } else if (pending_release_leds == false && coinEnable == false && currentPowerState0 == 1) {
     startingLEDState();
   }
+  // Handle Display Handover
+  displayMainState = (digitalRead(displayMainLDR) == LOW);
   if (pending_release_display == true && coinEnable == true) {
     pending_release_display = false;
+    kioskModeRequest("GameRunning");
+    delay(6000);
     setDisplayState(false);
-    kioskModeRequest("StopAll");
   }
-  unsigned long currentMillis = millis();
+  // Handle Shutdown Timer
+  if (currentPowerState0 == 1 && requestedPowerState0 > -1 && currentMillis - previousShutdownMillis >= (shutdownDelayMinTimeout * 60000)) {
+    if (requestedPowerState0 == 0) {
+      setMasterPowerOff();
+    } else if (requestedPowerState0 == 1) {
+      setGameOff();
+    }
+    requestedPowerState0 = -1;
+  } else if (currentPowerState0 == 0 && requestedPowerState0 > -1) {
+    if (requestedPowerState0 == 0) {
+      setMasterPowerOff();
+    }
+    requestedPowerState0 = -1;
+  }
+  // Handle Inactivity Timer
+  if (inactivityTimeout == true && currentPowerState0 == 1 && requestedPowerState0 == -1 && currentMillis - previousInactivityMillis >= (inactivityMinTimeout * 60000)) {
+    if (coinEnable == false) {
+      setGameOff();
+    } else if (coinEnable == true) {
+      shuttingDownLEDState(1);
+    }
+  }
+  // Drive LED Animations
   if (transition_leds == true) {
     if (currentStep == 0) {
       sourceBrightness = NeoPixelL.getBrightness();
@@ -654,6 +809,7 @@ void loop() {
       }
     }
   }
+  // Play Melody Sheets
   if (startMelody == true) {
     if (currentMillis - previousMelodyMillis >= pauseBetweenNotes) {
       previousMelodyMillis = currentMillis;
@@ -664,18 +820,114 @@ void loop() {
       } else if (melodyPlay == 2) {
         playMelody(boot_tone, boot_tone_dur, sizeof(boot_tone_dur) / sizeof(int));
       } else if (melodyPlay == 3) {
-        playMelody(warning_tone, warning_tone_dur, sizeof(warning_tone_dur) / sizeof(int));
+        int position = map(position, 0, 4, loopMelody, 0) * 1000;
+        if (position <= 1) {
+          playMelody(warning_tone_long, warning_tone_long_dur, sizeof(warning_tone_long_dur) / sizeof(int));
+        } else {
+          playMelody(warning_tone, warning_tone_dur, sizeof(warning_tone_dur) / sizeof(int));
+        }
       }
     }
   }
 }
 
 void cpu0Loop( void * pvParameters ) {
-  Serial.print("Primary Task running on core ");
-  Serial.println(xPortGetCoreID());
-
   for(;;) {
     runtime();
+  }
+}
+void pingLoop( void * pvParameters ) {
+  for(;;) {
+    delay(1000);
+    Serial.println("");
+    Serial.println("_KIOSK_HELLO?_");
+    Serial.println("");
+  }
+}
+void serialLoop( void * pvParameters ) {
+  for(;;) {
+    delay(1);
+    kioskCommand();
+  }
+}
+void cardReaderTXLoop( void * pvParameters ) {
+  for(;;) {
+    // Send Block State
+    digitalWrite(cardReaderTX, HIGH);
+    delay(100);
+    digitalWrite(cardReaderTX, LOW);
+    delay(100);
+    digitalWrite(cardReaderTX, HIGH);
+    if (currentPowerState0 == -1 || (currentPowerState0 == 1 && requestedPowerState0 != -1)) {
+      delay(100);
+    } else if (currentPowerState0 == 0) {
+      delay(300);
+    } else if (currentPowerState0 == 1 && requestedPowerState0 == -1) {
+      delay(500);
+    }
+    digitalWrite(cardReaderTX, LOW);
+    delay(500);
+  }
+}
+void cardReaderRXLoop( void * pvParameters ) {
+  for(;;) {
+    bool abort = false;
+    bool found_header = false;
+    int lastPulse = 0;
+    if (digitalRead(cardReaderRX) == LOW) {
+      delay(1);
+    } else {
+      lastPulse = millis();
+      while (found_header == false) {
+        // Continue to wait for header to complete
+        delay(1);
+        if (millis() - lastPulse >= 300 && digitalRead(cardReaderRX) == LOW) {
+          found_header = true;
+        } else if (digitalRead(cardReaderRX) == HIGH) {
+          lastPulse = millis();
+          found_header = false;
+        }
+      }
+      while (abort == false && digitalRead(cardReaderRX) == LOW) {
+        // Continue to wait for header to drop off
+        delay(1);
+        if (millis() - lastPulse >= 2000) {
+          abort = true;
+        }
+      }
+      lastPulse = millis();
+      while (abort == false && digitalRead(cardReaderRX) == HIGH) {
+        // Continue to wait for header to drop off
+        delay(1);
+        if (millis() - lastPulse >= 2000) {
+          abort = true;
+        }
+      }
+      lastPulse = millis();
+      while (abort == false && digitalRead(cardReaderRX) == LOW) {
+        // Continue to wait for header to drop off
+        delay(1);
+        if (millis() - lastPulse >= 2000) {
+          abort = true;
+        }
+      }
+      lastPulse = millis();
+      while (abort == false && digitalRead(cardReaderRX) == HIGH) {
+        // Start Calculating State
+        delay(1);
+        if (millis() - lastPulse >= 2000) {
+          abort = true;
+        }
+      }
+      if (abort == true) {
+        delay(1000);
+      } else {
+        cardReaderState = round((millis() - lastPulse) / 100);
+        Serial.println("");
+        Serial.println("_KIOSK_CRS_" + String(cardReaderState) + "_");
+        Serial.println("");
+      }
+    }
   }
 }
 
@@ -688,6 +940,8 @@ void runtime() {
       const String power = getPowerAuth();
       displayIconDualMessage(1, false, false, (power == "Active") ? 491 : 490, "System Power", power);
       displayState = 1;
+  } else if (currentPowerState0 == -1) {
+    delay(500);
   } else if (currentPowerState0 != -1) {
     if (displayState != 0 && current_time < 1) {
       displayIconMessage(1, true, true, 250, "チュウニズム");
@@ -697,39 +951,55 @@ void runtime() {
       displayIconDualMessage(1, (power == "Active"), false, (power == "Active") ? 491 : 490, "System Power", power);
       displayState = 1;
     } else if (displayState != 2 && current_time >= 2 && current_time < 3) {
-      String volume = "";
-      volume += map(currentVolume, 0, 127, 0, 100);
-      volume += "%";
-      displayIconDualMessage(1, (currentVolume >= 50), false, 484, "Speakers", volume.c_str());
+      String timeout = "";
+      if (currentPowerState0 == 1 && inactivityTimeout == true) {
+        timeout = String(inactivityMinTimeout - ((millis() - previousInactivityMillis) / 60000));
+        timeout += " Min";
+      } else if (requestedPowerState0 != -1) {
+        timeout = "Expired";
+      } else {
+        timeout = "Inactive";
+      }
+      displayIconDualMessage(1, ((currentPowerState0 == 1 && inactivityTimeout == true) ? false : (((millis() - previousInactivityMillis) / 60000) < (inactivityMinTimeout - 5))), false, 459, "Timeout", timeout);
       displayState = 2;
     } else if (displayState != 3 && current_time >= 3 && current_time < 4) {
+      String volume = "";
+      if (muteVolume == false) {
+        volume += map(currentVolume, minimumVolume, 127, 0, 100);
+        volume += "%";
+      } else {
+        volume = "Muted";
+      }
+      displayIconDualMessage(1, (currentVolume >= 50 || muteVolume == true), false, 484, "Speakers", volume.c_str());
+      displayState = 3;
+    } else if (displayState != 4 && current_time >= 4 && current_time < 5) {
       String fan = "";
       fan += map(currentFanSpeed, 0, 255, 0, 100);
       fan += "%";
       displayIconDualMessage(1, (map(currentFanSpeed, 0, 255, 0, 100) >= 75), false, 225, "Fans", fan.c_str());
-      displayState = 3;
-    } else if (displayState != 4 && current_time >= 4 && current_time < 5) {
-      displayIconDualMessage(1, (currentMarqueeState == 1), false, 398, "Marquee", (currentMarqueeState == 1) ? "Enabled" : "Disabled");
       displayState = 4;
     } else if (displayState != 5 && current_time >= 5 && current_time < 6) {
-      displayIconDualMessage(1, (displayMainState == false), false, (displayMainState == false) ? 250 : 129, "Display Source", (displayMainState == true) ? "PC" : "Game");
+      displayIconDualMessage(1, (currentMarqueeState == 1), false, 398, "Marquee", (currentMarqueeState == 1) ? "Enabled" : "Disabled");
       displayState = 5;
     } else if (displayState != 6 && current_time >= 6 && current_time < 7) {
-      displayIconDualMessage(1, (currentLEDState == 1), false, 398, "LED Control", (currentLEDState == 0) ? "MCU" : "Game");
+      displayIconDualMessage(1, (displayMainState == false), false, (displayMainState == false) ? 250 : 129, "Display Source", (displayMainState == true) ? "PC" : "Game");
       displayState = 6;
     } else if (displayState != 7 && current_time >= 7 && current_time < 8) {
-      displayIconDualMessage(1, false, false, 141, "Game Disk", getGameSelect());
+      displayIconDualMessage(1, (currentLEDState == 1), false, 398, "LED Control", (currentLEDState == 0) ? "MCU" : "Game");
       displayState = 7;
     } else if (displayState != 8 && current_time >= 8 && current_time < 9) {
-      displayIconDualMessage(1, (coinEnable == true), false, 71, "Card Reader", (coinEnable == true) ? "Enabled" : "Disabled");
+      displayIconDualMessage(1, false, false, 141, "Game Disk", getGameSelect());
       displayState = 8;
     } else if (displayState != 9 && current_time >= 9 && current_time < 10) {
-      displayIconDualMessage(1, false, false, 510, "Net: Chunithm", getEthSwitchVal(1));
+      displayIconDualMessage(1, (coinEnable == true), false, 71, "Card Reader", (cardReaderState == -1) ? "No Data" : (coinEnable == true) ? "Enabled" : "Disabled");
       displayState = 9;
     } else if (displayState != 10 && current_time >= 10 && current_time < 11) {
-      displayIconDualMessage(1, false, false, 510, "Net: WACCA", getEthSwitchVal(0));
+      displayIconDualMessage(1, false, false, 510, "Net: Chunithm", getEthSwitchVal(1));
       displayState = 10;
-    } else if (current_time >= 11) {
+    } else if (displayState != 11 && current_time >= 11 && current_time < 12) {
+      displayIconDualMessage(1, false, false, 510, "Net: WACCA", getEthSwitchVal(0));
+      displayState = 11;
+    } else if (current_time >= 12) {
       displayedSec = time_in_sec;
     }
   }
@@ -745,7 +1015,12 @@ void playMelody(int tones[], int durations[], int size) {
     // Melody is finished
     currentNote = 0;
     if (loopMelody != -1) {
-      pauseBetweenNotes = loopMelody * 1000;
+      if (melodyPlay == 3) {
+        const float position = ((millis() - previousShutdownMillis) / 60000);
+        pauseBetweenNotes = map(position, 0, 4, loopMelody, 0) * 1000;
+      } else {
+        pauseBetweenNotes = loopMelody * 1000;
+      }
     } else {
       startMelody = false;
       melodyPlay = -1;
@@ -829,7 +1104,7 @@ String getGameSelect() {
 }
 String getPowerAuth() {
   String assembledOutput = "";
-  assembledOutput += ((currentPowerState0 == -1) ? "Power Off" : (currentPowerState0 == 0) ? "Standby" : (coinEnable == false) ? "Startup" : "Active");
+  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -1) ? "Power Off" : (currentPowerState0 == 0) ? "Standby" : (coinEnable == false) ? "Startup" : "Active"));
   return assembledOutput;
 }
 
@@ -861,18 +1136,23 @@ void startingLEDState() {
   pending_release_leds = true;
   animation_state = -1;
   animation_mode = 1;
+  currentStep = 0;
   transition_leds = true;
 }
-void shuttingDownLEDState() {
+void shuttingDownLEDState(int state) {
+  kioskModeRequest("WarningGame");
   setLEDControl(true);
   targetBrightness = 255;
   numSteps = 4.0 * 33.2;
   transition_interval = (unsigned long)(1000.0 * 4.0 / (float)numSteps);
   setUpperLEDColor(CRGB::Black, true);
   setSideLEDs(CRGB::Red, CRGB::Red, true);
+  previousShutdownMillis = millis();
+  requestedPowerState0 = state;
   pending_release_leds = false;
   animation_state = -1;
   animation_mode = 1;
+  currentStep = 0;
   transition_leds = true;
   melodyPlay = 3;
   loopMelody = 2;
@@ -1073,6 +1353,7 @@ void setMasterPowerOn() {
     setDisplayState(true);
     currentPowerState0 = 0;
   }
+  requestedPowerState0 = -1;
 }
 void setMasterPowerOff() {
   kioskModeRequest("StopAll");
@@ -1091,17 +1372,19 @@ void setMasterPowerOff() {
     delay(500);
     setOmnimixState(false, false);
   }
+  requestedPowerState0 = -1;
   currentPowerState0 = -1;
 }
 void setGameOn() {
   if (currentPowerState0 == -1) {
-    setMasterPowerOn();
-    delay(500);
+    setIOPower(true);
+    delay(250);
   }
   if (currentPowerState0 != 1) {
+    previousInactivityMillis = millis();
+    startLoadingScreen();
     setChassisFanSpeed(100);
     startingLEDState();
-    startLoadingScreen();
     setMarqueeState(true, false);
     resetOmnimixState();
     delay(1000);
@@ -1114,15 +1397,21 @@ void setGameOn() {
     startMelody = true;
     pending_release_display = true;
   }
+  if (requestedPowerState0 != -1) {
+    resetInactivityTimer();
+  }
+  requestedPowerState0 = -1;
   currentPowerState0 = 1;
 }
 void setGameOff() {
   if (currentPowerState0 == 1) {
+    currentPowerState0 = 0;
     pending_release_leds = false;
     pending_release_display = false;
     transition_leds = false;
     animation_state = -1;
     animation_mode = -1;
+    currentStep = 0;
     setDisplayState(true);
     setChassisFanSpeed(50);
     kioskModeRequest("StartStandby");
@@ -1134,11 +1423,13 @@ void setGameOff() {
     delay(800);
     setOmnimixState(false, false);melodyPlay = 1;
     loopMelody = -1;
+    melodyPlay = 1;
     currentNote = 0;
     previousMelodyMillis = 0;
     startMelody = true;
   }
   currentPowerState0 = 0;
+  requestedPowerState0 = -1;
 }
 
 void setSysBoardPower(bool state) {
@@ -1177,10 +1468,82 @@ void setOmnimixState(bool state, bool save) {
 void resetOmnimixState() {
   digitalWrite(gameSelectRelay0, (currentGameSelected0 == 1) ? HIGH : LOW);
 }
+void setGameDisk0() {
+  if (currentGameSelected0 == 1) {
+    if (currentPowerState0 == 1) {
+      setSysBoardPower(false);
+      if (pending_release_display == false) {
+        setDisplayState(true);
+        startLoadingScreen();
+      }
+      delay(800);
+    }
+    setOmnimixState(false, true);
+    if (currentPowerState0 == 1) {
+      setSysBoardPower(true);
+    }
+  }
+}
+void setGameDisk1() {
+  if (currentGameSelected0 == 0) {
+    if (currentPowerState0 == 1) {
+      setSysBoardPower(false);
+      delay(800);
+      if (pending_release_display == false) {
+        setDisplayState(true);
+        startLoadingScreen();
+      }
+    }
+    setOmnimixState(true, true);
+    if (currentPowerState0 == 1) {
+      setSysBoardPower(true);
+    }
+  }
+}
 void setDisplayState(bool state) {
   if (state != displayMainState) {
     pushDisplaySwitch();
   }
+}
+void setEthernetState(int ethNum, String ethVal) {
+  if (digitalRead(ethSensors[ethNum]) == ((ethVal == "1") ? LOW : HIGH)) {
+    if (ethNum == 1 && currentPowerState0 == 1) {
+      setSysBoardPower(false);
+      if (pending_release_display == false) {
+        setDisplayState(true);
+        startLoadingScreen();
+      }
+      delay(800);
+    }
+    pushEthSwitch(ethNum);
+    if (ethNum == 1 && currentPowerState0 == 1) {
+      setSysBoardPower(true);
+    }
+  }
+}
+void resetState() {
+  setLEDControl((currentPowerState0 != 1));
+  if (currentLEDState == 0) {
+    delay(800);
+    copyLEDBuffer();
+  }
+  setDisplayState(false);
+  kioskModeRequest("ResetState");
+  melodyPlay = -1;
+  loopMelody = -1;
+  currentNote = 0;
+  previousMelodyMillis = 0;
+  startMelody = false;
+  pending_release_leds = false;
+  pending_release_display = false;
+  animation_state = -1;
+  animation_mode = -1;
+  currentStep = 0;
+  requestedPowerState0 = -1;
+}
+void resetInactivityTimer() {
+  previousInactivityMillis = millis();
+  resetState();
 }
 
 void pushEthSwitch(int ethNum) {
@@ -1197,11 +1560,131 @@ void pushDisplaySwitch() {
 }
 
 void kioskModeRequest(String command) {
-  HTTPClient http;
-  String url = String(hostURL + command);
-  http.begin(url);
-  int httpCode = http.GET();
-  http.end();
-  if (httpCode == 200) {
+  Serial.println("");
+  Serial.println("_KIOSK_" + command + "_");
+  Serial.println("");
+}
+void kioskTest() {
+  while (Serial.available()) {
+    char inChar = (char)Serial.read();
+    inputString += inChar;
+    if (inputString.length() > 13) {
+      inputString = inputString.substring(1);
+    }
+    if (inputString == "_KIOSK_READY_") {
+      ready_to_boot = true;
+      if(Task3 != NULL) {
+        vTaskDelete(Task3);
+      }
+    }
+  }
+}
+void kioskCommand() {
+  while (Serial.available()) {
+    char inChar = (char)Serial.read();
+    inputString += inChar;
+    if (inputString.length() > 13) {
+      inputString = inputString.substring(1);
+    }
+    if (inputString == "_KIOSK_POFF _") {
+      setMasterPowerOff();
+    } else if (inputString == "_KIOSK_ROFF _") {
+      if (currentPowerState0 == 1 && coinEnable == false) {
+        setGameOff();
+      } else if (currentPowerState0 == 1 && coinEnable == true) {
+        shuttingDownLEDState(0);
+      } else if (currentPowerState0 == 0) {
+        setMasterPowerOff();
+      }
+    } else if (inputString == "_KIOSK_PSTB _") {
+      if (currentPowerState0 == 1) {
+        setGameOff();
+      } else {
+        setMasterPowerOn();
+      }
+    } else if (inputString == "_KIOSK_RSTB _") {
+      if (currentPowerState0 == 1 && coinEnable == false) {
+        setGameOff();
+      } else if (currentPowerState0 == 1 && coinEnable == true) {
+        shuttingDownLEDState(1);
+      } else if (currentPowerState0 == -1) {
+        setMasterPowerOn();
+      }
+    } else if (inputString == "_KIOSK_PON  _") {
+      setGameOn();
+    } else if (inputString == "_KIOSK_PS   _") {
+      Serial.println("_KIOSK_DATA_[" + getPowerAuth() + "]_");
+    } else if (inputString == "_KIOSK_ITS  _") {
+      Serial.println("_KIOSK_DATA_[" + String((currentPowerState0 == 1 && inactivityTimeout == true) ? 0 : (inactivityMinTimeout - ((millis() - previousInactivityMillis) / 1000))) + "]_");
+    } else if (inputString == "_KIOSK_STS  _") {
+      Serial.println("_KIOSK_DATA_[" + String((currentPowerState0 == 1) ? 0 : (shutdownDelayMinTimeout - ((millis() - previousShutdownMillis) / 1000))) + "]_");
+    } else if (inputString == "_KIOSK_GS0  _") {
+      setGameDisk0();
+    } else if (inputString == "_KIOSK_GS1  _") {
+      setGameDisk1();
+    } else if (inputString == "_KIOSK_GS   _") {
+      Serial.println("_KIOSK_DATA_[" + getGameSelect() + "]_");
+    } else if (inputString == "_KIOSK_NC0N0_") {
+      setEthernetState(0, "0");
+    } else if (inputString == "_KIOSK_NC0N1_") {
+      setEthernetState(0, "1");
+    } else if (inputString == "_KIOSK_NC1N0_") {
+      setEthernetState(1, "0");
+    } else if (inputString == "_KIOSK_NC1N1_") {
+      setEthernetState(1, "1");
+    } else if (inputString == "_KIOSK_SR   _") {
+      resetState();
+    } else if (inputString == "_KIOSK_VU05 _") {
+      int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
+      current_percent += 5;
+      currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
+      muteVolume = false;
+      ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+    } else if (inputString == "_KIOSK_VU10 _") {
+      int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
+      current_percent += 10;
+      currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
+      muteVolume = false;
+      ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+    } else if (inputString == "_KIOSK_VU25 _") {
+      int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
+      current_percent += 25;
+      currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
+      muteVolume = false;
+      ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+    } else if (inputString == "_KIOSK_VD05 _") {
+      int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
+      current_percent -= 5;
+      currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
+      muteVolume = false;
+      ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+    } else if (inputString == "_KIOSK_VD10 _") {
+      int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
+      current_percent -= 10;
+      currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
+      muteVolume = false;
+      ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+    } else if (inputString == "_KIOSK_VD25 _") {
+      int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
+      current_percent -= 25;
+      currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
+      muteVolume = false;
+      ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+    } else if (inputString == "_KIOSK_VS   _") {
+      Serial.println("_KIOSK_DATA_[" + String(map(currentVolume, minimumVolume, 127, 0, 100)) + "]_");
+    } else if (inputString == "_KIOSK_VM1  _") {
+      muteVolume = true;
+      ds3502.setWiper(minimumVolume);
+    } else if (inputString == "_KIOSK_VM0  _") {
+      muteVolume = false;
+      ds3502.setWiper(currentVolume);
+    } else if (inputString == "_KIOSK_VMT  _") {
+      muteVolume = !(muteVolume);
+      ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+    } else if (inputString == "_KIOSK_VMS  _") {
+      Serial.println("_KIOSK_DATA_[" + String((muteVolume == true) ? "Muted" : "Unmuted") + "]_");
+    } else if (inputString == "_KIOSK_PING _") {
+      Serial.println("_KIOSK_DATA_[PONG]_");
+    }
   }
 }
