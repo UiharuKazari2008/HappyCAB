@@ -231,6 +231,10 @@ void setup() {
     delay(500);
     nuControl.println("P::");
   }
+  while (nuResponse == "") {
+    nuControl.println("PS::0");
+    delay(100);
+  }
   nuResponse = "";
 
   bootScreen("NETWORK");
@@ -417,16 +421,16 @@ void setup() {
   server.on("/network/set", [=]() {
     String assembledOutput = "";
     int ethNum = 0;
-    String ethVal = "";
+    int ethVal = 0;
     for (int i=0; i < server.args(); i++) {
       if (server.argName(i) == "cabNum")
         ethNum = server.arg(i).toInt();
       else if (server.argName(i) == "ethNum")
         ethVal = server.arg(i).toInt();
     }
-    if (digitalRead(ethSensors[ethNum]) == ((ethVal == "1") ? LOW : HIGH)) {
+    if (digitalRead(ethSensors[ethNum]) == ((ethVal == 1) ? LOW : HIGH)) {
       setEthernetState(ethNum, ethVal);
-      server.send(200, "text/plain", (ethVal == "1" && currentPowerState0 == 1) ? "REBOOTING" : "OK");
+      server.send(200, "text/plain", (ethNum == 0 && currentPowerState0 == 1) ? "REBOOTING" : "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
@@ -1751,19 +1755,40 @@ void setGameDisk(int number) {
     nuControl.println(String(number));
     delay(100);
   }
-  if (currentNuPowerState0 == 1 && pending_release_display == false) {
+  if (currentPowerState0 == 1 && pending_release_display == false) {
     setDisplayState(true);
     startLoadingScreen();
   }
+  messageIcon = 129;
+  messageText = "HDD: ";
+  switch (number) {
+    case 0:
+      messageText += "Omnimix";
+      break;
+    case 1:
+      messageText += "Base";
+      break;
+    case 2:
+      messageText += "Crystal+";
+      break;
+    default:
+      messageText += "???";
+      break;
+  }
+  invertMessage = (currentPowerState0 == 1);
+  isJpnMessage = false;
+  brightMessage = 255;
+  timeoutMessage = 10;
+  typeOfMessage = 1;
 }
 void setDisplayState(bool state) {
   if (state != displayMainState) {
     pushDisplaySwitch();
   }
 }
-void setEthernetState(int ethNum, String ethVal) {
-  if (digitalRead(ethSensors[ethNum]) == ((ethVal == "1") ? LOW : HIGH)) {
-    if (ethNum == 1 && currentPowerState0 == 1) {
+void setEthernetState(int ethNum, int ethVal) {
+  if (digitalRead(ethSensors[ethNum]) == ((ethVal == 1) ? LOW : HIGH)) {
+    if (ethNum == 0 && currentPowerState0 == 1) {
       nuResponse = "";
       while (nuResponse == "") {
         nuControl.println("PS::128");
@@ -1773,6 +1798,26 @@ void setEthernetState(int ethNum, String ethVal) {
         setDisplayState(true);
         startLoadingScreen();
       }
+    }
+    if (ethNum == 0) {
+      messageIcon = 270;
+      messageText = "Network: ";
+      switch (ethVal) {
+        case 0:
+          messageText += "Official";
+          break;
+        case 1:
+          messageText += "Missless";
+          break;
+        default:
+          messageText += "???";
+          break;
+      }
+      invertMessage = (currentPowerState0 == 1);
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     }
     pushEthSwitch(ethNum);
   }
@@ -1888,13 +1933,13 @@ void kioskCommand() {
     } else if (inputString == "_KIOSK_GS   _") {
       Serial.println("_KIOSK_DATA_[" + getGameSelect() + "]_");
     } else if (inputString == "_KIOSK_NC0N0_") {
-      setEthernetState(0, "0");
+      setEthernetState(0, 0);
     } else if (inputString == "_KIOSK_NC0N1_") {
-      setEthernetState(0, "1");
+      setEthernetState(0, 1);
     } else if (inputString == "_KIOSK_NC1N0_") {
-      setEthernetState(1, "0");
+      setEthernetState(1, 0);
     } else if (inputString == "_KIOSK_NC1N1_") {
-      setEthernetState(1, "1");
+      setEthernetState(1, 1);
     } else if (inputString == "_KIOSK_SR   _") {
       resetState();
     } else if (inputString == "_KIOSK_VU05 _") {
@@ -1903,47 +1948,208 @@ void kioskCommand() {
       currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
       muteVolume = false;
       ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+      int curVol = map(currentVolume, minimumVolume, 127, 0, 100);
+      
+      if (muteVolume == true) {
+        messageIcon = 279;
+        messageText = "Volume Muted";
+        invertMessage = true;
+      } else {
+        messageIcon = 277;
+        messageText = "Volume: ";
+        messageText += String(curVol);
+        messageText += "%";
+        invertMessage = (curVol >= 40);
+      }
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     } else if (inputString == "_KIOSK_VU10 _") {
       int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
       current_percent += 10;
       currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
       muteVolume = false;
       ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+      
+      int curVol = map(currentVolume, minimumVolume, 127, 0, 100);
+      
+      if (muteVolume == true) {
+        messageIcon = 279;
+        messageText = "Volume Muted";
+        invertMessage = true;
+      } else {
+        messageIcon = 277;
+        messageText = "Volume: ";
+        messageText += String(curVol);
+        messageText += "%";
+        invertMessage = (curVol >= 40);
+      }
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     } else if (inputString == "_KIOSK_VU25 _") {
       int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
       current_percent += 25;
       currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
       muteVolume = false;
       ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+      
+      int curVol = map(currentVolume, minimumVolume, 127, 0, 100);
+      
+      if (muteVolume == true) {
+        messageIcon = 279;
+        messageText = "Volume Muted";
+        invertMessage = true;
+      } else {
+        messageIcon = 277;
+        messageText = "Volume: ";
+        messageText += String(curVol);
+        messageText += "%";
+        invertMessage = (curVol >= 40);
+      }
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     } else if (inputString == "_KIOSK_VD05 _") {
       int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
       current_percent -= 5;
       currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
       muteVolume = false;
       ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+      
+      int curVol = map(currentVolume, minimumVolume, 127, 0, 100);
+      
+      if (muteVolume == true) {
+        messageIcon = 279;
+        messageText = "Volume Muted";
+        invertMessage = true;
+      } else {
+        messageIcon = 277;
+        messageText = "Volume: ";
+        messageText += String(curVol);
+        messageText += "%";
+        invertMessage = (curVol >= 40);
+      }
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     } else if (inputString == "_KIOSK_VD10 _") {
       int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
       current_percent -= 10;
       currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
       muteVolume = false;
       ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+      
+      int curVol = map(currentVolume, minimumVolume, 127, 0, 100);
+      
+      if (muteVolume == true) {
+        messageIcon = 279;
+        messageText = "Volume Muted";
+        invertMessage = true;
+      } else {
+        messageIcon = 277;
+        messageText = "Volume: ";
+        messageText += String(curVol);
+        messageText += "%";
+        invertMessage = (curVol >= 40);
+      }
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     } else if (inputString == "_KIOSK_VD25 _") {
       int current_percent = map(currentVolume, minimumVolume, 127, 0, 100);
       current_percent -= 25;
       currentVolume = map(current_percent, 0, 100, minimumVolume, 127);
       muteVolume = false;
       ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+      
+      int curVol = map(currentVolume, minimumVolume, 127, 0, 100);
+      
+      if (muteVolume == true) {
+        messageIcon = 279;
+        messageText = "Volume Muted";
+        invertMessage = true;
+      } else {
+        messageIcon = 277;
+        messageText = "Volume: ";
+        messageText += String(curVol);
+        messageText += "%";
+        invertMessage = (curVol >= 40);
+      }
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     } else if (inputString == "_KIOSK_VS   _") {
       Serial.println("_KIOSK_DATA_[" + String(map(currentVolume, minimumVolume, 127, 0, 100)) + "]_");
     } else if (inputString == "_KIOSK_VM1  _") {
       muteVolume = true;
       ds3502.setWiper(minimumVolume);
+      
+      int curVol = map(currentVolume, minimumVolume, 127, 0, 100);
+      
+      if (muteVolume == true) {
+        messageIcon = 279;
+        messageText = "Volume Muted";
+        invertMessage = true;
+      } else {
+        messageIcon = 277;
+        messageText = "Volume: ";
+        messageText += String(curVol);
+        messageText += "%";
+        invertMessage = (curVol >= 40);
+      }
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     } else if (inputString == "_KIOSK_VM0  _") {
       muteVolume = false;
       ds3502.setWiper(currentVolume);
+      
+      int curVol = map(currentVolume, minimumVolume, 127, 0, 100);
+      
+      if (muteVolume == true) {
+        messageIcon = 279;
+        messageText = "Volume Muted";
+        invertMessage = true;
+      } else {
+        messageIcon = 277;
+        messageText = "Volume: ";
+        messageText += String(curVol);
+        messageText += "%";
+        invertMessage = (curVol >= 40);
+      }
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     } else if (inputString == "_KIOSK_VMT  _") {
       muteVolume = !(muteVolume);
       ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
+      
+      int curVol = map(currentVolume, minimumVolume, 127, 0, 100);
+      
+      if (muteVolume == true) {
+        messageIcon = 279;
+        messageText = "Volume Muted";
+        invertMessage = true;
+      } else {
+        messageIcon = 277;
+        messageText = "Volume: ";
+        messageText += String(curVol);
+        messageText += "%";
+        invertMessage = (curVol >= 40);
+      }
+      isJpnMessage = false;
+      brightMessage = 255;
+      timeoutMessage = 10;
+      typeOfMessage = 1;
     } else if (inputString == "_KIOSK_VMS  _") {
       Serial.println("_KIOSK_DATA_[" + String((muteVolume == true) ? "Muted" : "Unmuted") + "]_");
     } else if (inputString == "_KIOSK_PING _") {
