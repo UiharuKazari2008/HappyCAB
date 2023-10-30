@@ -56,6 +56,7 @@ bool inactivityTimeout = true;
 int displayedSec = 0;
 int displayState = -1;
 bool occupied = false;
+bool occupany_lock = false;
 bool occupied_triggered = false;
 bool enable_sonar_search = true;
 const char *occupied_url = "http://192.168.100.62:3001/button-streamdeck8?event=single-press";
@@ -147,34 +148,39 @@ void sonarOccupancyTest() {
     unsigned int distance = sonar.ping_cm(); // Send a ping and get the distance in centimeters
     last_sonar_distance = distance;
     if (triggered_count >= TRIGGER_COUNT && distance <= TRIGGER_DISTANCE) {
-        Serial.println("OCCUPIED LOCK");
         last_trigger_time = time_in_sec;
         previousInactivityMillis = millis();
         inactivityMinTimeout = defaultInactivityMinTimeout + 20;
-        if (occupied == false && occupied_triggered == false) {
-          HTTPClient http;
-          String url = String(occupied_url);
-          Serial.println("Sending GET request to: " + url);
-          http.begin(url);
-          int httpCode = http.GET();
-          http.end();
-          Serial.println("HTTP Response code: " + String(httpCode));
-          Serial.println("CALL OCCUPIED URL");
-          if (httpCode == 200) {
-            occupied = true;
-            occupied_triggered = true;
-          }
+
+        HTTPClient http;
+        String url = String(occupied_url);
+        http.begin(url);
+        int httpCode = http.GET();
+        http.end();
+        if (httpCode == 200) {
+          occupied = true;
+          occupied_triggered = true;
+          kioskModeRequest("Occupied");
         }
       } else if (distance > 0 && distance <= TRIGGER_DISTANCE) {
         triggered_count += 1;
         Serial.print("TRIGGER - Distance: ");
         Serial.print(distance);
         Serial.println(" cm");
-        if (occupied == true) {
-          Serial.println("OCCUPIED RE-LOCK");
+        if (occupied == true`) {
           last_trigger_time = time_in_sec;
           previousInactivityMillis = millis();
           inactivityMinTimeout = defaultInactivityMinTimeout + 20;
+
+          HTTPClient http;
+          String url = String(occupied_url);
+          http.begin(url);
+          int httpCode = http.GET();
+          http.end();
+          if (httpCode == 200) {
+            occupied = true;
+            occupied_triggered = true;
+          }
         }
       } else {
         if (occupied_triggered == true) {
@@ -185,17 +191,15 @@ void sonarOccupancyTest() {
         Serial.print("SEARCH - Distance: ");
         Serial.print(distance);
         Serial.println(" cm");
-        if (occupied == true && time_in_sec - unoccupied_time > (UNOCCUPIED_CALLBACK_DELAY_MIN * 60)) {
+        if (occupany_lock == false & occupied == true && time_in_sec - unoccupied_time > (UNOCCUPIED_CALLBACK_DELAY_MIN * 60)) {
           HTTPClient http;
           String url = String(unoccupied_url);
-          Serial.println("Sending GET request to: " + url);
           http.begin(url);
           int httpCode = http.GET();
           http.end();
-          Serial.println("HTTP Response code: " + String(httpCode));
-          Serial.println("CALL OCCUPIED URL");
           if (httpCode == 200) {
             occupied = false;
+            kioskModeRequest("Unoccupied");
           }
         }
       }
@@ -405,6 +409,64 @@ void setup() {
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
+  });  
+
+  server.on("/occupany/lock", [=]() {
+    if (occupany_lock == false) {
+      HTTPClient http;
+      String url = String(occupied_url);
+      Serial.println("Sending GET request to: " + url);
+      http.begin(url);
+      int httpCode = http.GET();
+      http.end();
+      Serial.println("HTTP Response code: " + String(httpCode));
+      Serial.println("CALL OCCUPIED URL");
+      if (httpCode == 200) {
+        occupied = true;
+        occupied_triggered = true;
+        occupany_lock = true;
+        server.send(200, "text/plain", "OK");
+      } else {
+        server.send(200, "text/plain", "FAILED");
+      }
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/occupany/unlock", [=]() {
+    if (occupany_lock == true) {
+      occupany_lock = false;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/occupany", [=]() {
+    String assembledOutput = "";
+    if (occupany_lock == true) {
+      assembledOutput += "LOCKED";
+    }
+    if (occupied_triggered == true) {
+      assembledOutput += "OCCUPIED";
+    } else {
+      assembledOutput += "UNOCCUPIED"
+    }
+    server.send(200, "text/plain", assembledOutput);
+  });
+  server.on("/occupany/distance", [=]() {
+    String assembledOutput = "";
+    if (occupany_lock == true) {
+      assembledOutput += "LOCKED:";
+    } else {
+      if (occupied_triggered == true) {
+        assembledOutput += "OCCUPIED:";
+      } else {
+        assembledOutput += "UNOCCUPIED:"
+      }
+    }
+    assembledOutput += last_sonar_distance.c_str();
+    assembledOutput += "CM"
+    server.send(200, "text/plain", assembledOutput);
   });
   
   server.on("/touch/game", [=]() {
