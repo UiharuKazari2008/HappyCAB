@@ -117,14 +117,23 @@ void handleCRMessage(String inputString) {
 }
 
 String setPowerOn() {
-  if (system_power_state != 1) {
-    digitalWrite(game_disks[selected_game_disk], HIGH);
-    digitalWrite(power_en_pin, HIGH);
-    system_power_state = 1;
-    blinkNum = 0;
-    return "OK";
+  if (selected_game_disk < 10) {
+    if (system_power_state != 1) {
+      digitalWrite(game_disks[selected_game_disk], HIGH);
+      digitalWrite(power_en_pin, HIGH);
+      system_power_state = 1;
+      blinkNum = 0;
+      return "OK";
+    } else {
+      return "NC";
+    }
   } else {
-    return "NC";
+      digitalWrite(power_en_pin, LOW);
+      for (int i=0; i < num_of_disks; i++) {
+        digitalWrite(game_disks[i], LOW);
+      }
+      system_power_state = 0;
+      return "INHIBIT";
   }
 }
 String setPowerOff() {
@@ -143,7 +152,7 @@ String setPowerOff() {
 String setGameDisk(int disk_num) {
   if (selected_game_disk != disk_num) {
     selected_game_disk = disk_num;
-    if (system_power_state == 1) {
+    if (system_power_state == 1 && selected_game_disk < 10) {
       String power_off = setPowerOff();
       String power_on = setPowerOn();
       return "RST";
