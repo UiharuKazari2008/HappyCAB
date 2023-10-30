@@ -435,7 +435,7 @@ void setup() {
     if (occupied_triggered == true) {
       assembledOutput += "OCCUPIED";
     } else {
-      assembledOutput += "UNOCCUPIED"
+      assembledOutput += "UNOCCUPIED";
     }
     server.send(200, "text/plain", assembledOutput);
   });
@@ -447,11 +447,11 @@ void setup() {
       if (occupied_triggered == true) {
         assembledOutput += "OCCUPIED:";
       } else {
-        assembledOutput += "UNOCCUPIED:"
+        assembledOutput += "UNOCCUPIED:";
       }
     }
-    assembledOutput += last_sonar_distance.c_str();
-    assembledOutput += "CM"
+    assembledOutput += last_sonar_distance;
+    assembledOutput += "CM";
     server.send(200, "text/plain", assembledOutput);
   });
   
@@ -1272,7 +1272,7 @@ void kioskCommand() {
               } else if (valueString == "UNLOCK") {
                 occupany_lock = false;
               } else if (valueString == "?DISTANCE") {
-                Serial.println("R::" + last_sonar_distance.c_str());
+                Serial.println("R::" + String(last_sonar_distance));
               } else if (valueString == "?") {
                 String assembledOutput = "";
                 if (occupany_lock == true) {
@@ -1281,12 +1281,12 @@ void kioskCommand() {
                   if (occupied_triggered == true) {
                     assembledOutput += "OCCUPIED";
                   } else {
-                    assembledOutput += "UNOCCUPIED"
+                    assembledOutput += "UNOCCUPIED";
                   }
                 }
-                Serial.println("R::" + assembledOutput.c_str());
+                Serial.println("R::" + assembledOutput);
               }
-            if (header == "POWER_SWITCH") {
+            } else if (header == "POWER_SWITCH") {
               int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
               if (valueString == "OFF") {
