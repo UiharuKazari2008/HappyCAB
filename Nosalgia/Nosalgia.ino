@@ -413,22 +413,8 @@ void setup() {
 
   server.on("/occupany/lock", [=]() {
     if (occupany_lock == false) {
-      HTTPClient http;
-      String url = String(occupied_url);
-      Serial.println("Sending GET request to: " + url);
-      http.begin(url);
-      int httpCode = http.GET();
-      http.end();
-      Serial.println("HTTP Response code: " + String(httpCode));
-      Serial.println("CALL OCCUPIED URL");
-      if (httpCode == 200) {
-        occupied = true;
-        occupied_triggered = true;
-        occupany_lock = true;
-        server.send(200, "text/plain", "OK");
-      } else {
-        server.send(200, "text/plain", "FAILED");
-      }
+      lockOccupancy();
+      server.send(200, "text/plain", "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
@@ -1198,6 +1184,23 @@ void resetInactivityTimer() {
   previousInactivityMillis = millis();
   inactivityMinTimeout = defaultInactivityMinTimeout + 20;
 }
+void lockOccupancy() {
+  if (occupany_lock == false) {
+    HTTPClient http;
+    String url = String(occupied_url);
+    Serial.println("Sending GET request to: " + url);
+    http.begin(url);
+    int httpCode = http.GET();
+    http.end();
+    Serial.println("HTTP Response code: " + String(httpCode));
+    Serial.println("CALL OCCUPIED URL");
+    if (httpCode == 200) {
+      occupied = true;
+      occupied_triggered = true;
+      occupany_lock = true;
+    }
+  }
+}
 
 
 void kioskAudioPlayback(String audio) {
@@ -1261,6 +1264,28 @@ void kioskCommand() {
           if (delimiterIndex != -1) {
             int headerIndex = receivedMessage.indexOf("::");
             String header = receivedMessage.substring(0, headerIndex);
+            if (header == "OCCUPANCY") {
+              int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+              String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
+              if (valueString == "LOCK") {
+                lockOccupancy();
+              } else if (valueString == "UNLOCK") {
+                occupany_lock = false;
+              } else if (valueString == "?DISTANCE") {
+                Serial.println("R::" + last_sonar_distance.c_str());
+              } else if (valueString == "?") {
+                String assembledOutput = "";
+                if (occupany_lock == true) {
+                  assembledOutput += "LOCKED";
+                } else {
+                  if (occupied_triggered == true) {
+                    assembledOutput += "OCCUPIED";
+                  } else {
+                    assembledOutput += "UNOCCUPIED"
+                  }
+                }
+                Serial.println("R::" + assembledOutput.c_str());
+              }
             if (header == "POWER_SWITCH") {
               int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
