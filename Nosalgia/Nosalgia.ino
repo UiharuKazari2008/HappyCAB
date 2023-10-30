@@ -167,7 +167,7 @@ void sonarOccupancyTest() {
         Serial.print("TRIGGER - Distance: ");
         Serial.print(distance);
         Serial.println(" cm");
-        if (occupied == true`) {
+        if (occupied == true) {
           last_trigger_time = time_in_sec;
           previousInactivityMillis = millis();
           inactivityMinTimeout = defaultInactivityMinTimeout + 20;
