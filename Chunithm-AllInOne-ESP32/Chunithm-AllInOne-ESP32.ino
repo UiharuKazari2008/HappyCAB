@@ -1670,6 +1670,13 @@ void handleCRMessage(String inputString) {
           resetInactivityTimer();
         }
       }
+    } else if (header == "BUTTON_REQUEST") {
+      int valueIndex = inputString.indexOf("::", headerIndex + 2);
+      String valueString = inputString.substring(headerIndex + 2, valueIndex);
+      if (ignore_next_state == false) {
+        ignore_next_state = true;
+        kioskModeRequest("BUTTON_" + valueString);
+      }
     } else if (header == "BOOT_REQUEST") {
       has_cr_talked = true;
       if (ignore_next_state == false) {
@@ -2308,13 +2315,20 @@ void kioskCommand() {
               Serial.println("R::PONG");
             } else if (header == "DISPLAY_MESSAGE") {
               // DISPLAY_MESSAGE::BIG::icon::text::isJP/t::255::invert/t::timeout/20
-              int typeOfMessage = -1;
-              int messageIcon = 0;
-              String messageText = "";
-              bool isJpnMessage = false;
-              int brightMessage = 1;
-              bool invertMessage = false;
-              int timeoutMessage = 0;
+              int iconIndex = receivedMessage.indexOf("::", headerIndex + 2);
+              messageIcon = (receivedMessage.substring(headerIndex + 2, iconIndex)).toInt();
+              int messageIndex = receivedMessage.indexOf("::", iconIndex + 2);
+              messageText = receivedMessage.substring(iconIndex + 2, messageIndex);
+              int isJpnIndex = receivedMessage.indexOf("::", messageIndex + 2);
+              isJpnMessage = ((receivedMessage.substring(messageIndex + 2, isJpnIndex)).toInt() == 1);
+              int brightIndex = receivedMessage.indexOf("::", isJpnIndex + 2);
+              brightMessage = (receivedMessage.substring(isJpnIndex + 2, brightIndex)).toInt();
+              int invertIndex = receivedMessage.indexOf("::", brightIndex + 2);
+              invertMessage = ((receivedMessage.substring(brightIndex + 2, invertIndex)).toInt() == 1);
+              int timeoutIndex = receivedMessage.indexOf("::", invertIndex + 2);
+              timeoutMessage = (receivedMessage.substring(invertIndex + 2, timeoutIndex)).toInt();
+              int typeIndex = receivedMessage.indexOf("::", timeoutIndex + 2);
+              typeOfMessage = (receivedMessage.substring(timeoutIndex + 2, typeIndex)).toInt();
             } else if (header == "SYS_STATE") {
               int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);

@@ -18,7 +18,9 @@
     </configurations>
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="0eba71ed-31f3-4908-85aa-067771701745" name="Changes" comment="" />
+    <list default="true" id="0eba71ed-31f3-4908-85aa-067771701745" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/Chunithm-AllInOne-ESP32/Chunithm-AllInOne-ESP32.ino" beforeDir="false" afterPath="$PROJECT_DIR$/Chunithm-AllInOne-ESP32/Chunithm-AllInOne-ESP32.ino" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -83,6 +85,7 @@
       <workItem from="1696312421479" duration="87000" />
       <workItem from="1698550519818" duration="67000" />
       <workItem from="1698551147555" duration="622000" />
+      <workItem from="1698744537724" duration="2000" />
     </task>
     <servers />
   </component>
