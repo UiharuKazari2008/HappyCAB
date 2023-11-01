@@ -100,7 +100,7 @@ int currentGameSelected0 = -1;
 int currentLEDState = 0;
 int currentSliderState = 0;
 int currentMarqueeState = 1;
-int currentFanSpeed = 128;
+int currentFan1Speed = 128;
 U8G2_SSD1306_128X32_UNIVISION_F_HW_I2C u8g2(U8G2_R0);
 TaskHandle_t Task1;
 TaskHandle_t Task2;
