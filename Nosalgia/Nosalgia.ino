@@ -224,6 +224,7 @@ void setup() {
   pinMode(ledSelectRelay, OUTPUT);
   pinMode(muteAudioRelay, OUTPUT);
   pinMode(HDMISwitch1Key, OUTPUT);
+  pinMode(fanPWM1, OUTPUT);
 
   digitalWrite(HDMISwitch1Key, HIGH);
   digitalWrite(touchSelectPin, HIGH);
@@ -255,6 +256,7 @@ void setup() {
   if (digitalRead(HDMISwitch1LDR) == LOW) {
     toggleHDMISwitch0State();
   }
+  setChassisFanSpeed(40);
   HTTPClient http;
   String url = String(unoccupied_url);
   Serial.println("Sending GET request to: " + url);
@@ -267,6 +269,7 @@ void setup() {
     occupied = false;
   }
   kioskModeRequest("StopAll");
+
 
   server.on("/display/bottom/pc", [=]() {
     setDisplayState(0,0);
