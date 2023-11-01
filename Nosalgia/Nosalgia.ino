@@ -30,6 +30,7 @@ const int sonarTriggerPin = 13; // BLUE
 const int sonarMaxDistance = 150;
 const int HDMISwitch1LDR = 34;
 const int HDMISwitch1Key = 19;
+const int fanPWM1 = 15;
 
 // Card Reader Communication
 //HardwareSerial cardReaderSerial(2);
@@ -1127,8 +1128,8 @@ void setGameDisk(int number) {
 }
 // TODO: Add PWM Fans to top of chassis
 void setChassisFanSpeed(int speed) {
-  //currentFan1Speed = map(speed, 0, 100, 0, 255);
-  //analogWrite(fanPWM1, currentFan1Speed);
+  currentFan1Speed = map(speed, 0, 100, 0, 255);
+  analogWrite(fanPWM1, currentFan1Speed);
 }
 void setDisplayState(int display, int state) {
   switch (display) {
