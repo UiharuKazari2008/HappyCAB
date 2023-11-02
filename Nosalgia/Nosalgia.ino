@@ -580,6 +580,21 @@ void loop() {
     }
     requestedPowerState0 = -1;
   }
+  if (currentPowerState0 == 1 && requestedPowerState0 > -1) {
+    const float position = ((millis() - previousShutdownMillis) / 60000);
+    int val = map(position, 0, 4, loopMelody, 0) * 1000;
+    if (val <= 1 && currentNote !== val) {      
+      Serial.println("");
+      Serial.println("AUDIO_PLAY::" + audio);
+      Serial.println("");
+      currentNote = val;
+    } else if (currentNote !== val) {      
+      Serial.println("");
+      Serial.println("AUDIO_PLAY::" + audio + "::" + val);
+      Serial.println("");
+      currentNote = val;
+    }
+  }
   // Handle Inactivity Timer
   if (inactivityTimeout == true && currentPowerState0 == 1 && requestedPowerState0 == -1 && currentMillis - previousInactivityMillis >= (inactivityMinTimeout * 60000)) {
     if (coinEnable == false) {
