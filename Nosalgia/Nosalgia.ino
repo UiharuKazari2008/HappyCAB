@@ -585,12 +585,12 @@ void loop() {
     int val = map(position, 0, 4, loopMelody, 0) * 1000;
     if (val <= 1 && currentNote !== val) {      
       Serial.println("");
-      Serial.println("AUDIO_PLAY::" + audio);
+      Serial.print("AUDIO_PLAY::SHUTDOWN");
       Serial.println("");
       currentNote = val;
     } else if (currentNote !== val) {      
       Serial.println("");
-      Serial.println("AUDIO_PLAY::" + audio + "::" + val);
+      Serial.println("AUDIO_PLAY::SHUTDOWN::" + val);
       Serial.println("");
       currentNote = val;
     }
@@ -860,7 +860,6 @@ void shuttingDownLEDState(int state) {
   currentNote = 0;
   previousMelodyMillis = 0;
   startMelody = true;
-  kioskAudioPlayback("SHUTDOWN");
 
   messageIcon = (requestedPowerState0 == -1) ? 96 : 223;
   messageText = (requestedPowerState0 == -1) ? "Power Off" : "Standby";
