@@ -351,16 +351,12 @@ void setup() {
   server.on("/power/on/pan", [=]() {
     server.send(200, "text/plain", (currentPowerState0 == 1 && currentGameSelected == 0) ? "UNCHNAGED" : (currentPowerState0 == 1) ? "REBOOTING" : "OK");
     setGameDisk(0);
-    if (currentPowerState0 != 1) {
-      setGameOn();
-    }
+    setGameOn();
   });
   server.on("/power/on/nbt", [=]() {
     server.send(200, "text/plain", (currentPowerState0 == 1 && currentGameSelected == 1) ? "UNCHNAGED" : (currentPowerState0 == 1) ? "REBOOTING" : "OK");
     setGameDisk(1);
-    if (currentPowerState0 != 1) {
-      setGameOn();
-    }
+    setGameOn();
   });
   server.on("/request/standby", [=]() {
     server.send(200, "text/plain", "OK");
@@ -590,7 +586,7 @@ void loop() {
       currentNote = val;
     } else if (currentNote != val) {      
       Serial.println("");
-      Serial.println("AUDIO_PLAY::SHUTDOWN::" + val);
+      Serial.println("AUDIO_PLAY::SHUTDOWN::" + String(val));
       Serial.println("");
       currentNote = val;
     }
@@ -1429,9 +1425,7 @@ void kioskCommand() {
                   default:
                     break;
                 }
-                if (currentPowerState0 != 1) {
-                  setGameOn();
-                }
+                setGameOn();
               }
             } else if (header == "VOLUME") {
               int optionIndex = receivedMessage.indexOf("::", headerIndex + 2);
