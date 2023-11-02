@@ -588,7 +588,7 @@ void loop() {
       Serial.print("AUDIO_PLAY::SHUTDOWN");
       Serial.println("");
       currentNote = val;
-    } else if (currentNote !== val) {      
+    } else if (currentNote != val) {      
       Serial.println("");
       Serial.println("AUDIO_PLAY::SHUTDOWN::" + val);
       Serial.println("");
