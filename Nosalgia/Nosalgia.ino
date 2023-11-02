@@ -583,7 +583,7 @@ void loop() {
   if (currentPowerState0 == 1 && requestedPowerState0 > -1) {
     const float position = ((millis() - previousShutdownMillis) / 60000);
     int val = map(position, 0, 4, loopMelody, 0) * 1000;
-    if (val <= 1 && currentNote !== val) {      
+    if (val <= 1 && currentNote != val) {      
       Serial.println("");
       Serial.print("AUDIO_PLAY::SHUTDOWN");
       Serial.println("");
