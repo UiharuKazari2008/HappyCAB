@@ -1257,7 +1257,7 @@ void setGameOn() {
     inactivityMinTimeout = defaultInactivityMinTimeout + 5;
     previousInactivityMillis = millis();
     startLoadingScreen();
-    setChassisFanSpeed(100);
+    setChassisFanSpeed(75);
     setMainFanSpeed(100);
     startingLEDState();
     setMarqueeState(true, false);

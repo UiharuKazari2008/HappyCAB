@@ -1512,8 +1512,10 @@ void copyLEDBuffer() {
   for (int i = 0; i < NUM_LEDS_2; i++) {
     NeoPixelR.setPixelColor(i, NeoPixelR.Color(leds2[i].r, leds2[i].g, leds2[i].b));
   }
-  NeoPixelL.show();
-  NeoPixelR.show();
+  if (IrReceiver.isIdle()) {
+    NeoPixelL.show();
+    NeoPixelR.show();
+  }
 }
 
 void handleSetLeds(String ledValues, int bankSelect, bool should_transition) {
