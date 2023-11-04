@@ -290,7 +290,7 @@ void setup() {
   });
   server.on("/fan", [=]() {
     String response = "";
-    response += map(currentFanSpeed, 0, 255, 0, 100);
+    response += map(currentFan1Speed, 0, 255, 0, 100);
     server.send(200, "text/plain", response);
   });
 
