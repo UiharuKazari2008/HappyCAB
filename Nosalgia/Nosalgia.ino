@@ -903,7 +903,7 @@ void setMasterPowerOn() {
     setLEDControl(true);
     kioskModeRequest("StartStandby");
     resetMarqueeState();
-    setChassisFanSpeed(70);
+    setChassisFanSpeed(55);
     delay(500);
     defaultLEDState();
     standbyLEDState();
@@ -932,7 +932,7 @@ void setMasterPowerOn() {
 void setMasterPowerOff() {
   digitalWrite(muteAudioRelay, HIGH);
   kioskModeRequest("StopAll");
-  setChassisFanSpeed(45);
+  setChassisFanSpeed(35);
   setLEDControl(true);
   setMarqueeState(false, false);
   setTouchControl(false);
@@ -1040,7 +1040,7 @@ void setGameOff() {
 
     setDisplayState(0,0);
     setDisplayState(1,0);
-    setChassisFanSpeed(70);
+    setChassisFanSpeed(55);
     kioskModeRequest("StartStandby");
     setLEDControl(true);
     setTouchControl(false);
