@@ -1186,8 +1186,8 @@ void setMasterPowerOn() {
     setLEDControl(true);
     kioskModeRequest("StartStandby");
     resetMarqueeState();
-    setChassisFanSpeed(50);
-    setMainFanSpeed(0);
+    setChassisFanSpeed(35);
+    setMainFanSpeed(25);
     delay(500);
     defaultLEDState();
     standbyLEDState();
@@ -1214,7 +1214,7 @@ void setMasterPowerOn() {
 void setMasterPowerOff() {
   kioskModeRequest("StopAll");
   setChassisFanSpeed(0);
-  setMainFanSpeed(0);
+  setMainFanSpeed(15);
   setLEDControl(true);
   setMarqueeState(false, false);
   if (currentPowerState0 == 1) {
@@ -1298,8 +1298,8 @@ void setGameOff() {
     currentStep = 0;
 
     setDisplayState(true);
-    setChassisFanSpeed(50);
-    setMainFanSpeed(0);
+    setChassisFanSpeed(35);
+    setMainFanSpeed(25);
     kioskModeRequest("StartStandby");
     setLEDControl(true);
     delay(250);
