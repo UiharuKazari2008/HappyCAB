@@ -271,6 +271,29 @@ void setup() {
   kioskModeRequest("StopAll");
 
 
+  server.on("/fan/set", [=]() {
+    String response = "UNCHANGED";
+    int fanSpeed = -1;
+    if (server.hasArg("percent")) {
+      int _fanVal = server.arg("percent").toInt();
+      if (_fanVal > 0 && _fanVal <= 100) {
+        fanSpeed = _fanVal;
+        response = "SET TO ";
+        response += _fanVal;
+        response += "%";
+      }
+    }
+    if (fanSpeed > -1) {
+      setChassisFanSpeed(fanSpeed);
+    }
+    server.send(200, "text/plain", response);
+  });
+  server.on("/fan", [=]() {
+    String response = "";
+    response += map(currentFanSpeed, 0, 255, 0, 100);
+    server.send(200, "text/plain", response);
+  });
+
   server.on("/display/bottom/pc", [=]() {
     setDisplayState(0,0);
     server.send(200, "text/plain", (digitalRead(HDMISwitch1LDR) == LOW) ? "UNCHANGED" : "OK");
@@ -880,7 +903,7 @@ void setMasterPowerOn() {
     setLEDControl(true);
     kioskModeRequest("StartStandby");
     resetMarqueeState();
-    setChassisFanSpeed(50);
+    setChassisFanSpeed(70);
     delay(500);
     defaultLEDState();
     standbyLEDState();
@@ -909,7 +932,7 @@ void setMasterPowerOn() {
 void setMasterPowerOff() {
   digitalWrite(muteAudioRelay, HIGH);
   kioskModeRequest("StopAll");
-  setChassisFanSpeed(0);
+  setChassisFanSpeed(45);
   setLEDControl(true);
   setMarqueeState(false, false);
   setTouchControl(false);
@@ -1017,7 +1040,7 @@ void setGameOff() {
 
     setDisplayState(0,0);
     setDisplayState(1,0);
-    setChassisFanSpeed(50);
+    setChassisFanSpeed(70);
     kioskModeRequest("StartStandby");
     setLEDControl(true);
     setTouchControl(false);
