@@ -587,6 +587,13 @@ void setup() {
     }
     server.send(200, "text/plain", "OK");
   });
+  server.on("/test/display_switch/hold", [=]() {
+    digitalWrite(displayMainSelect, HIGH);
+    digitalWrite(displayMainSelect, LOW);
+    delay(5000);
+    digitalWrite(displayMainSelect, HIGH);
+    server.send(200, "text/plain", "OK");
+  });
   server.on("/test/melody", [=]() {
     loopMelody = -1;
     melodyPlay = 1;
