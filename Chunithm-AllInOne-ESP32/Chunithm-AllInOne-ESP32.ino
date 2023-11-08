@@ -1902,7 +1902,7 @@ void setSysBoardPower(bool state) {
   nuResponse = "";
   while (currentNuPowerState0 == ((currentGameSelected0 < 10) ? ((state == true) ? 0 : 1) : 1)) {
     nuControl.print("PS::");
-    nuControl.println(((currentGameSelected0 < 10) ? ((state == true) ? "1" : "0") : "0");
+    nuControl.println(((currentGameSelected0 < 10) ? ((state == true) ? "1" : "0") : "0"));
     delay(100);
   }
   digitalWrite(controlRelays[1], ((currentGameSelected0 < 10) ? ((state == true) ? HIGH : LOW) : LOW));
@@ -1962,7 +1962,7 @@ void setGameDisk(int number) {
     // ALLS Switchover
     inhibitNuState = true;
     currentGameSelected0 = number;
-    ALLSCtrl("DS", number);
+    ALLSCtrl("DS", String(number));
     if (currentPowerState0 == 1) {
       setSysBoardPower(true);
       resetPSU();
