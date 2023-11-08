@@ -445,7 +445,7 @@ void setup() {
     for (int i=0; i < server.args(); i++) {
       if (server.argName(i) == "cabNum") {
         ethNum = server.arg(i).toInt();
-        if (ethNum == 0 && currentGameSelected0 == 10) {
+        if (ethNum == 0 && currentGameSelected0 >= 10) {
           assembledOutput += "Private";
         } else {
           String const val = getEthSwitchVal(ethNum);
@@ -480,9 +480,25 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/select/game/new", [=]() {
+  server.on("/select/game/star", [=]() {
+    if (currentGameSelected0 != 3) {
+      setGameDisk(3);
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/select/game/sun", [=]() {
     if (currentGameSelected0 != 10) {
       setGameDisk(10);
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/select/game/new", [=]() {
+    if (currentGameSelected0 != 11) {
+      setGameDisk(11);
       server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
@@ -669,7 +685,7 @@ void setup() {
     server.sendHeader("Access-Control-Allow-Methods", "GET");
     server.sendHeader("Access-Control-Max-Age", "10000");
     server.send(200, "text/plain", "LED Data Sent");
-    if (pending_release_leds == false && (currentPowerState0 != 1 || currentGameSelected0 == 10)) {
+    if (pending_release_leds == false && (currentPowerState0 != 1 || currentGameSelected0 >= 10)) {
       int brightness = 64;
       int bankSelect = 0;
       if (server.hasArg("ledBrightness")) {
@@ -705,7 +721,7 @@ void setup() {
     server.sendHeader("Access-Control-Allow-Methods", "GET");
     server.sendHeader("Access-Control-Max-Age", "10000");
     server.send(200, "text/plain", "LED Data Sent");
-    if (pending_release_leds == false && (currentPowerState0 != 1 || currentGameSelected0 == 10)) {
+    if (pending_release_leds == false && (currentPowerState0 != 1 || currentGameSelected0 >= 10)) {
       int brightness = 64;
       int bankSelect = 0;
       brightness = server.arg("ledBrightness").toInt();
@@ -851,7 +867,7 @@ void loop() {
   if (pending_release_display == true && coinEnable == true) {
     pending_release_display = false;
     kioskModeRequest("GameRunning");
-    if (currentGameSelected0 != 10) {
+    if (currentGameSelected0 < 10) {
       delay(6000);
       setDisplayState(false);
     }
@@ -1165,7 +1181,7 @@ void nuControlRXLoop( void * pvParameters ) {
                 int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
                 String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
                 int valueInt = valueString.toInt();
-                if (valueInt >= 0 && valueInt <= 2 && inhibitNuState == false) {
+                if (valueInt >= 0 && valueInt <= 9 && inhibitNuState == false) {
                   currentGameSelected0 = valueInt;
                 }
               } else if (header == "R") {
@@ -1365,10 +1381,16 @@ String getGameSelect() {
       assembledOutput = "Base";
       break;
     case 2:
-      assembledOutput = "Crystal";
+      assembledOutput = "Crystal Plus";
+      break;
+    case 3:
+      assembledOutput = "Star Plus";
       break;
     case 10:
       assembledOutput = "Sun Plus";
+      break;
+    case 10:
+      assembledOutput = "New Plus";
       break;
     default:
       assembledOutput = "Other";
@@ -1785,7 +1807,7 @@ void setGameOn() {
     setChassisFanSpeed(100);
     startingLEDState();
     setMarqueeState(true, false);
-    if (currentGameSelected0 == 10) {
+    if (currentGameSelected0 >= 10) {
       kioskModeRequest("StartALLSRuntime");
       setSysBoardPower(false);
       setTouchControl(false);
@@ -1813,11 +1835,6 @@ void setGameOn() {
   }
   if (requestedPowerState0 != -1) {
     resetState();
-    if (currentGameSelected0 == 0) {
-      setSideLEDs(CRGB::SkyBlue, CRGB::SkyBlue, false);
-      setUpperLEDColor(CRGB::Black, false);
-      kioskModeRequest("SetALLSLED");
-    }
   }
   requestedPowerState0 = -1;
   currentPowerState0 = 1;
@@ -1833,12 +1850,12 @@ void setGameOff() {
     animation_mode = -1;
     currentStep = 0;
 
-    if (currentGameSelected0 == 10) {
+    if (currentGameSelected0 >= 10) {
       kioskModeRequest("StopALLSRuntime");
     }
     resetPSU();
     setDisplayState(true);
-    if (currentGameSelected0 == 10) {
+    if (currentGameSelected0 >= 10) {
       activeCooldownTimer = 1;
       previousCooldownMillis = millis();
     } else {
@@ -1932,7 +1949,7 @@ void setChassisFanSpeed(int speed) {
   analogWrite(fanPWM, currentFanSpeed);
 }
 void setGameDisk(int number) {
-  if (number != 10) {
+  if (number < 10) {
     // Nu Switchover
     inhibitNuState = false;
     nuResponse = "";
@@ -1942,37 +1959,28 @@ void setGameDisk(int number) {
       delay(100);
     }
     if (currentPowerState0 == 1) {
-      if (currentNuPowerState0 == 0) {
-        setSysBoardPower(true);
-      }
-      if (currentGameSelected0 == 10) {
+      if (currentGameSelected0 >= 10) {
         kioskModeRequest("StopALLSRuntime");
-        resetPSU();
-        setSysBoardPower(true);
-        setTouchControl(true);
       }
-      if (pending_release_display == false) {
-        setDisplayState(true);
-        startingLEDState();
-        startLoadingScreen();
-      }
+      setSysBoardPower(true);
+      setTouchControl(true);
+      resetPSU();
+      setDisplayState(true);
+      startingLEDState();
+      startLoadingScreen();
     }
   } else {
     // ALLS Switchover
     inhibitNuState = true;
-    currentGameSelected0 = 10;
+    currentGameSelected0 = number;
     if (currentPowerState0 == 1) {
-      if (currentNuPowerState0 == 1) {
-        setSysBoardPower(false);
-      }
+      setSysBoardPower(false);
       resetPSU();
       setTouchControl(false);
       setDisplayState(true);
       kioskModeRequest("StartALLSRuntime");
-      if (pending_release_display == false) {
-        startingLEDState();
-        startLoadingScreen();
-      }
+      startingLEDState();
+      startLoadingScreen();
     }
   }
   messageIcon = 129;
@@ -1987,8 +1995,14 @@ void setGameDisk(int number) {
     case 2:
       messageText += "Crystal+ (Nu)";
       break;
+    case 3:
+      messageText += "Star+ (Nu)";
+      break;
     case 10:
       messageText += "Sun+ (ALLS)";
+      break;
+    case 11:
+      messageText += "New+ (ALLS)";
       break;
     default:
       messageText += "???";
@@ -2042,12 +2056,12 @@ void setEthernetState(int ethNum, int ethVal) {
   }
 }
 void resetState() {
-  setLEDControl((currentPowerState0 != 1 && currentGameSelected0 != 10));
+  setLEDControl((currentPowerState0 != 1 && currentGameSelected0 < 10));
   if (currentLEDState == 0) {
     delay(800);
     copyLEDBuffer();
   }
-  setDisplayState((currentGameSelected0 == 10 && currentPowerState0 == 1) || (currentPowerState0 != 1));
+  setDisplayState((currentGameSelected0 >= 10 && currentPowerState0 == 1) || (currentPowerState0 != 1));
   kioskModeRequest("ResetState");
   startMelody = false;
   melodyPlay = -1;

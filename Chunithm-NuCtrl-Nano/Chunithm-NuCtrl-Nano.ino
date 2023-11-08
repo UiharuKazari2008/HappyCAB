@@ -1,9 +1,9 @@
 bool system_power_state = 0;
 int selected_game_disk = 0;
 
-const int num_of_disks = 3;
-const int game_disks[3] = { 2, 3, 4 };
-const int power_en_pin = 5;
+const int num_of_disks = 4;
+const int game_disks[4] = { 2, 3, 4, 5 };
+const int power_en_pin = 6;
 
 void setup() {
   Serial.begin(9600);
