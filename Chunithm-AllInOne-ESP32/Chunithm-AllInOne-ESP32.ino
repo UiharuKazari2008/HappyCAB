@@ -1732,7 +1732,7 @@ void setMasterPowerOn() {
     if (activeCooldownTimer == -1) {
       setChassisFanSpeed(50);
     } else {
-      setChassisFanSpeed(100);
+      setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
     }
     delay(500);
     defaultLEDState();
@@ -1762,7 +1762,7 @@ void setMasterPowerOff() {
   if (activeCooldownTimer == -1) {
     setChassisFanSpeed(30);
   } else {
-    setChassisFanSpeed(100);
+      setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
   }
   setLEDControl(true);
   setMarqueeState(false, false);
@@ -1854,7 +1854,7 @@ void setGameOff() {
     setDisplayState(true);
     activeCooldownTimer = 0;
     previousCooldownMillis = millis();
-    setChassisFanSpeed(100);
+    setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
     kioskModeRequest("StartStandby");
     setLEDControl(true);
     delay(250);
