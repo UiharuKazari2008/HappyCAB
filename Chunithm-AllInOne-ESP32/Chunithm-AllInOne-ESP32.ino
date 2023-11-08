@@ -589,17 +589,21 @@ void setup() {
   server.on("/test/sysbrd/on", [=]() {
     //setDisplayState(false);
     setSysBoardPower(true);
-    setTouchControl(true);
+    setTouchControl((currentGameSelected0 < 10));
     server.send(200, "text/plain", "OK");
   });
   server.on("/test/sysbrd/reset", [=]() {
     //setDisplayState(false);
     setSysBoardPower(true);
-    setTouchControl(true);
-    nuResponse = "";
-    while (nuResponse == "") {
-      nuControl.println("PS::128");
-      delay(100);
+    setTouchControl(currentGameSelected0 < 10);
+    if (currentGameSelected0 >= 10) {
+      ALLSCtrl("PS", "128");
+    } else {
+      nuResponse = "";
+      while (nuResponse == "") {
+        nuControl.println("PS::128");
+        delay(100);
+      }
     }
     server.send(200, "text/plain", "OK");
   });
@@ -1804,17 +1808,11 @@ void setGameOn() {
     previousInactivityMillis = millis();
     resetPSU();
     startLoadingScreen();
-    setChassisFanSpeed(100);
+    setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
     startingLEDState();
     setMarqueeState(true, false);
-    if (currentGameSelected0 >= 10) {
-      kioskModeRequest("StartALLSRuntime");
-      setSysBoardPower(false);
-      setTouchControl(false);
-    } else {
-      setSysBoardPower(true);
-      setTouchControl(true);
-    }
+    setSysBoardPower(true);
+    setTouchControl((currentGameSelected0 < 10));
     setDisplayState(true);
     
     melodyPlay = 0;
@@ -1850,25 +1848,18 @@ void setGameOff() {
     animation_mode = -1;
     currentStep = 0;
 
-    if (currentGameSelected0 >= 10) {
-      kioskModeRequest("StopALLSRuntime");
-    }
+    
+    setSysBoardPower(false);
     resetPSU();
     setDisplayState(true);
-    if (currentGameSelected0 >= 10) {
-      activeCooldownTimer = 1;
-      previousCooldownMillis = millis();
-    } else {
-      activeCooldownTimer = 0;
-      previousCooldownMillis = millis();
-    }
+    activeCooldownTimer = 0;
+    previousCooldownMillis = millis();
     setChassisFanSpeed(100);
     kioskModeRequest("StartStandby");
     setLEDControl(true);
     delay(250);
     standbyLEDState();
     resetMarqueeState();
-    setSysBoardPower(false);
     setTouchControl(false);
     
     loopMelody = -1;
@@ -1909,12 +1900,13 @@ void requestStandby() {
 
 void setSysBoardPower(bool state) {
   nuResponse = "";
-  while (currentNuPowerState0 == ((state == true) ? 0 : 1)) {
+  while (currentNuPowerState0 == ((currentGameSelected0 < 10) ? ((state == true) ? 0 : 1) : 1)) {
     nuControl.print("PS::");
-    nuControl.println((state == true) ? "1" : "0");
+    nuControl.println(((currentGameSelected0 < 10) ? ((state == true) ? "1" : "0") : "0");
     delay(100);
   }
-  digitalWrite(controlRelays[1], (state == true) ? HIGH : LOW);
+  digitalWrite(controlRelays[1], ((currentGameSelected0 < 10) ? ((state == true) ? HIGH : LOW) : LOW));
+  ALLSCtrl("PS", ((currentGameSelected0 >= 10) ? ((state == true) ? "1" : "0") : 0));
   delay((state == true) ? 200 : 500);
 }
 void setLEDControl(bool state) {
@@ -1959,9 +1951,6 @@ void setGameDisk(int number) {
       delay(100);
     }
     if (currentPowerState0 == 1) {
-      if (currentGameSelected0 >= 10) {
-        kioskModeRequest("StopALLSRuntime");
-      }
       setSysBoardPower(true);
       setTouchControl(true);
       resetPSU();
@@ -1973,12 +1962,12 @@ void setGameDisk(int number) {
     // ALLS Switchover
     inhibitNuState = true;
     currentGameSelected0 = number;
+    ALLSCtrl("DS", number);
     if (currentPowerState0 == 1) {
-      setSysBoardPower(false);
+      setSysBoardPower(true);
       resetPSU();
       setTouchControl(false);
       setDisplayState(true);
-      kioskModeRequest("StartALLSRuntime");
       startingLEDState();
       startLoadingScreen();
     }
@@ -2098,6 +2087,13 @@ void pushDisplaySwitch() {
   digitalWrite(displayMainSelect, HIGH);
 }
 
+void ALLSCtrl(String command, String data) {
+  Serial.println("");
+  Serial.print(command);
+  Serial.print("::");
+  Serial.print(data);
+  Serial.println("");
+}
 void kioskModeRequest(String command) {
   Serial.println("");
   Serial.println("ACTION::" + command);
