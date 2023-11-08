@@ -1906,7 +1906,7 @@ void setSysBoardPower(bool state) {
     delay(100);
   }
   digitalWrite(controlRelays[1], ((currentGameSelected0 < 10) ? ((state == true) ? HIGH : LOW) : LOW));
-  ALLSCtrl("PS", ((currentGameSelected0 >= 10) ? ((state == true) ? "1" : "0") : 0));
+  ALLSCtrl("PS", ((currentGameSelected0 >= 10) ? ((state == true) ? "1" : "0") : "0"));
   delay((state == true) ? 200 : 500);
 }
 void setLEDControl(bool state) {
