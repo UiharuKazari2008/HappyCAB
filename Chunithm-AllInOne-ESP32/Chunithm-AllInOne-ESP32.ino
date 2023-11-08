@@ -472,7 +472,7 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/select/game/crystal", [=]() {
+  server.on("/select/game/other_1", [=]() {
     if (currentGameSelected0 != 2) {
       setGameDisk(2);
       server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
@@ -480,7 +480,7 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/select/game/star", [=]() {
+  server.on("/select/game/other_2", [=]() {
     if (currentGameSelected0 != 3) {
       setGameDisk(3);
       server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
@@ -1381,10 +1381,10 @@ String getGameSelect() {
       assembledOutput = "Base";
       break;
     case 2:
-      assembledOutput = "Crystal Plus";
+      assembledOutput = "Other #1";
       break;
     case 3:
-      assembledOutput = "Star Plus";
+      assembledOutput = "Other #2";
       break;
     case 10:
       assembledOutput = "Sun Plus";
