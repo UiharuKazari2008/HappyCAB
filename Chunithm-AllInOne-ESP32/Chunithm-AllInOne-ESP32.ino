@@ -1993,10 +1993,10 @@ void setGameDisk(int number) {
       messageText += "PL Base (Nu)";
       break;
     case 2:
-      messageText += "Crystal+ (Nu)";
+      messageText += "Other #1 (Nu)";
       break;
     case 3:
-      messageText += "Star+ (Nu)";
+      messageText += "Other #2 (Nu)";
       break;
     case 10:
       messageText += "Sun+ (ALLS)";
