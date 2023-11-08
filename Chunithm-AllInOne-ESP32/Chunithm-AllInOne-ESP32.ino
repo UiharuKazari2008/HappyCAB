@@ -1389,7 +1389,7 @@ String getGameSelect() {
     case 10:
       assembledOutput = "Sun Plus";
       break;
-    case 10:
+    case 11:
       assembledOutput = "New Plus";
       break;
     default:
