@@ -2237,22 +2237,7 @@ void kioskCommand() {
                 Serial.println("R::" + getGameSelect());
               } else {
                 int valueInt = valueString.toInt();
-                switch (valueInt) {
-                  case 0:
-                    setGameDisk(0);
-                    break;
-                  case 1:
-                    setGameDisk(1);
-                    break;
-                  case 2:
-                    setGameDisk(2);
-                    break;
-                  case 10:
-                    setGameDisk(10);
-                    break;
-                  default:
-                    break;
-                }
+                setGameDisk(valueInt);
               }
             } else if (header == "NETWORK_SELECT") {
               int cabIndex = receivedMessage.indexOf("::", headerIndex + 2);
