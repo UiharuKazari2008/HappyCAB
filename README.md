@@ -1,7 +1,17 @@
 # HappyCAB
 Personal total arcade cabinet controller based on the ESP32
 
-## Features
+## Projects
+* NuCtrl (Simple UART disk swap controller)
+  * ALLSCtrl uses the same protocal but has ethPhy switching added sense ALLS are more usable when not running games
+* Chunithm HappyCAB Cabinet Controller
+* WACCA HappyCAB Cabinet Controller
+* Nostalgia/BeatStream HappyCAB Cabinet Controller
+
+## Note
+Please dont just flash code and not try to see what its doing otherwise your gonna be sad. Only really NuCtrl is a drop in solution
+
+## HappyCAB Features
 * Virtual 3 position power switch (Off / Standby / Active)
 * Full power controls over all IO boards and lighting
 * Toggleable Marquee Lighting
@@ -9,7 +19,10 @@ Personal total arcade cabinet controller based on the ESP32
 * Transistion of LED pixel supported
 * I2C Absoute Volume controls
 * PWM Chassis Fan controls
-* Game SSD Selection and Power OK pin tripping for rebooting
+* NuCtrl Game SSD Selection and Power OK pin tripping for rebooting
+* vALLSCtrl Game Selection and Runtime controls
+  * For manageing the runtime of a Unoffical ALLS
+* Interaction with "Savior Of Song" Keychip Hardware to select what game keychip is in use
 * HDMI Source selection
 * Digital Physical Ethernet A-B Switch for Network Selection
 * WACCA and Chunithm LED Driver
