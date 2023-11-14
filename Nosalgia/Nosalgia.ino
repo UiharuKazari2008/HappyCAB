@@ -1124,7 +1124,6 @@ void setMarqueeState(bool state, bool save) {
     currentMarqueeState = (state == true) ? 1 : 0;
   }
 }
-// UPDATE
 void setGameDisk(int number) {
   if (currentGameSelected != number) {
     if (currentPowerState0 == 1) {
@@ -1162,7 +1161,6 @@ void setGameDisk(int number) {
     }
   } 
 }
-// TODO: Add PWM Fans to top of chassis
 void setChassisFanSpeed(int speed) {
   currentFan1Speed = map(speed, 0, 100, 0, 255);
   analogWrite(fanPWM1, currentFan1Speed);

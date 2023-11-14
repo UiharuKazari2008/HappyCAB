@@ -17,8 +17,14 @@ WebServer server(80);
 // 2 - Orange - LED 5V Enable
 // 3 - Red - ALLS + IO 12V/5V Enable
 // 4 - White - Marquee
-int relayPins[5] = { 12, 14, 27, 26, 25 };
-int numRelays = 5;
+int relayPins[6] = { 12, 14, 27, 26, 18, 25 };
+int numRelays = 6;
+// ALLS CONTROL PORT ("Wide" Pin Version)
+// UART Serial to Arduino Nano
+EspSoftwareSerial::UART nuControl;
+const int nuControlTX = 15; // WHITE RED
+const int nuControlRX = 5; // WHITE GREEN
+String nuResponse = "";
 // Fan Controller
 const int fanPWM1 = 19;
 const int fanPWM2 = 32;
@@ -27,12 +33,20 @@ const int fanPWM2 = 32;
 HardwareSerial cardReaderSerial(2);
 bool coinEnable = false;
 bool has_cr_talked = false;
+// Display Switch
+// 23 - Select
+// 15 - State
+const int displayMainSelect = 23;
+const int displayMainLDR = 36;
+bool displayMainState = false;
 // WACCA LED Controls
 #define ledOutput 13
 #define NUM_LEDS 480 // 8 x 5 x 12 (8 Col, 60 Rows)
 CRGB leds[NUM_LEDS];
 CRGB leds_source[NUM_LEDS];
 CRGB leds_target[NUM_LEDS];
+CRGBPalette16 currentPalette;
+TBlendType currentBlendType = LINEARBLEND;
 uint8_t sourceBrightness = 0;
 uint8_t targetBrightness = 0;
 // Beeper Tones
@@ -109,6 +123,12 @@ int currentVolume = 0;
 bool muteVolume = false;
 int minimumVolume = 10;
 int maximumVolume = 127;
+bool inhibitNuState = false;
+int currentGameSelected0 = -1;
+int requestedGameSelected0 = 0;
+int currentNuPowerState0 = -1;
+bool enhancedStandby = false;
+int currentALLSLANMode0 = 0;
 int currentPowerState0 = -1;
 int currentLEDState = 0;
 int currentMarqueeState = 1;
@@ -139,9 +159,9 @@ void checkWiFiConnection() {
     int tryCount = 0;
     tone(buzzer_pin, NOTE_CS5, 1000 / 8);
     while (WiFi.status() != WL_CONNECTED) {
-      if (tryCount > 60 && currentPowerState0 != 1) {
-        ESP.restart();
-      }
+      //if (tryCount > 60 && currentPowerState0 != 1) {
+      //  ESP.restart();
+      //}
       tone(buzzer_pin, (tryCount % 2 == 0) ? NOTE_GS5 : NOTE_CS5, 1000 / 8);
       delay(500);
       Serial.print(".");
@@ -155,6 +175,10 @@ void checkWiFiConnection() {
 }
 
 void setup() {
+  pinMode(displayMainSelect, OUTPUT);
+  digitalWrite(displayMainSelect, HIGH);
+  inputString.reserve(200); 
+  attachedSoftwareCU.reserve(200); 
   Serial.begin(115200);
   u8g2.begin();
   u8g2.enableUTF8Print();
@@ -171,7 +195,37 @@ void setup() {
   }
   FastLED.addLeds<WS2812, ledOutput, GRB>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);;
   FastLED.setBrightness(64);
+  pinMode(displayMainLDR, INPUT);
+  pinMode(fanPWM1, OUTPUT);
+  pinMode(fanPWM2, OUTPUT);
+
   tone(buzzer_pin, NOTE_C6);
+  bootScreen("NU_CTRL_COM");
+  nuControl.begin(9600, SWSERIAL_8N1, nuControlRX, nuControlTX, false);
+  if (!nuControl) {
+    bootScreen("NU_COM_FAIL");
+    while (1) { // Don't continue with invalid configuration
+      delay (1000);
+    }
+  }
+  xTaskCreatePinnedToCore(
+                  nuControlRXLoop,   /* Task function. */
+                  "nuControlRX",     /* name of task. */
+                  10000,       /* Stack size of task */
+                  NULL,        /* parameter of the task */
+                  1,           /* priority of the task */
+                  &Task6,      /* Task handle to keep track of created task */
+                  1);          /* pin task to core 1 */
+  while (nuResponse.substring(0,1) != "P") {
+    delay(500);
+    nuControl.println("P::");
+  }
+  nuResponse = "";
+  while (nuResponse == "") {
+    nuControl.println("PS::0");
+    delay(100);
+  }
+  nuResponse = "";
 
   bootScreen("PC_LINK");
   xTaskCreatePinnedToCore(
@@ -212,6 +266,7 @@ void setup() {
   ds3502.setWiper(currentVolume);
   ds3502.setWiperDefault(currentVolume);
   kioskModeRequest("StopAll");
+  displayMainState = (digitalRead(displayMainLDR) == LOW);
   delay(2000);
 
   bootScreen("REMOTE_ACCESS");
@@ -321,6 +376,53 @@ void setup() {
     response += map(currentFan2Speed, 0, 255, 0, 100);
     server.send(200, "text/plain", response);
   });
+
+  server.on("/display/pc", [=]() {
+    setDisplayState(true);
+    server.send(200, "text/plain", (displayMainSelect == true) ? "UNCHANGED" : "OK");
+  });
+  server.on("/display/game", [=]() {
+    setDisplayState(false);
+    server.send(200, "text/plain", (displayMainSelect == false) ? "UNCHANGED" : "OK");
+  });
+  server.on("/display/switch", [=]() {
+    String assembledOutput = "";
+    pushDisplaySwitch();
+    assembledOutput += ((displayMainSelect == false) ? "PC" : "AUX");
+    server.send(200, "text/plain", assembledOutput);
+  });
+  server.on("/display", [=]() {
+    String assembledOutput = "";
+    assembledOutput += ((displayMainSelect == true) ? "PC" : "GAME");
+    server.send(200, "text/plain", assembledOutput);
+  });
+
+  server.on("/select/game/reverse", [=]() {
+    if (currentGameSelected0 != 0) {
+      requestedGameSelected0 = 0;
+      if (enhancedStandby == false || currentPowerState0 == 1) {
+        setGameDisk(0);
+      }
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/select/game/lilly", [=]() {
+    if (currentGameSelected0 != 1) {
+      requestedGameSelected0 = 1;
+      if (enhancedStandby == false || currentPowerState0 == 1) {
+        setGameDisk(1);
+      }
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/select/game", [=]() {
+    String const val = getGameSelect();
+    server.send(200, "text/plain", val);
+  });
   
   server.on("/power/off", [=]() {
     server.send(200, "text/plain", (currentPowerState0 == -1) ? "UNCHNAGED" : "OK");
@@ -331,7 +433,7 @@ void setup() {
     if (currentPowerState0 == 1) {
       setGameOff();
       server.send(200, "text/plain", "OK");
-    } else if (currentPowerState0 == -1) {
+    } else if (currentPowerState0 == -1 || (currentPowerState0 == 0 && currentNuPowerState0 != ((enhancedStandby == true) ? 1 : 0))) {
       setMasterPowerOn();
       server.send(200, "text/plain", "OK");
     } else {
@@ -354,7 +456,7 @@ void setup() {
       } else {
         shuttingDownLEDState(1);
       }
-    } else if (currentPowerState0 == -1) {
+    } else if (currentPowerState0 == -1 || (currentPowerState0 == 0 && currentNuPowerState0 != ((enhancedStandby == true) ? 1 : 0))) {
       setMasterPowerOn();
     }
   });
@@ -362,7 +464,51 @@ void setup() {
     server.send(200, "text/plain", "OK");
     requestPowerOff();
   });
+  server.on("/enhanced_standby/enable", [=]() {
+    server.send(200, "text/plain", (enhancedStandby == true) ? "UNCHANGED" : "OK");
+    enhancedStandby = true;
+    if (currentPowerState0 == 0 && currentNuPowerState0 == 0) {
+      setMasterPowerOn();
+    }
+  });
+  server.on("/enhanced_standby/disable", [=]() {
+    server.send(200, "text/plain", (enhancedStandby == false) ? "UNCHANGED" : "OK");
+    enhancedStandby = false;
+    if (currentPowerState0 == 0 && currentNuPowerState0 == 1) {
+      setMasterPowerOn();
+    }
+  });
+  server.on("/enhanced_standby", [=]() {
+    server.send(200, "text/plain", (enhancedStandby == true) ? "Enabled" : "Disabled");
+  });
 
+  server.on("/test/alls/off", [=]() {
+    setDisplayState(true);
+    nuResponse = "";
+    while (currentNuPowerState0 == 1) {
+      nuControl.println("PS::0");
+      delay(100);
+    }
+    server.send(200, "text/plain", "OK");
+  });
+  server.on("/test/alls/on", [=]() {
+    setDisplayState(false);
+    nuResponse = "";
+    while (currentNuPowerState0 == 0) {
+      nuControl.println("PS::1");
+      delay(100);
+    }
+    server.send(200, "text/plain", "OK");
+  });
+  server.on("/test/alls/reset", [=]() {
+    setDisplayState(false);
+    nuResponse = "";
+    while (nuResponse == "") {
+      nuControl.println("PS::128");
+      delay(100);
+    }
+    server.send(200, "text/plain", "OK");
+  });
   server.on("/test/sysbrd/off", [=]() {
     setSysBoardPower(false);
     server.send(200, "text/plain", "OK");
@@ -372,9 +518,36 @@ void setup() {
     server.send(200, "text/plain", "OK");
   });
   server.on("/test/sysbrd/reset", [=]() {
-    setSysBoardPower(false);
-    delay(800);
-    setSysBoardPower(true);
+    nuResponse = "";
+    while (nuResponse == "") {
+      nuControl.println("PS::128");
+      delay(100);
+    }
+    server.send(200, "text/plain", "OK");
+  });
+  server.on("/test/display_switch/hold", [=]() {
+    digitalWrite(displayMainSelect, HIGH);
+    digitalWrite(displayMainSelect, LOW);
+    delay(5000);
+    digitalWrite(displayMainSelect, HIGH);
+    server.send(200, "text/plain", "OK");
+  });
+  server.on("/test/melody", [=]() {
+    loopMelody = -1;
+    melodyPlay = 1;
+    currentNote = 0;
+    previousMelodyMillis = 0;
+    startMelody = true;
+    server.send(200, "text/plain", "OK");
+  });
+  server.on("/test/display", [=]() {
+    messageIcon = 223;
+    messageText = "Display Test";
+    isJpnMessage = false;
+    brightMessage = 255;
+    invertMessage = false;
+    timeoutMessage = 5;
+    typeOfMessage = 1;
     server.send(200, "text/plain", "OK");
   });
 
@@ -595,12 +768,14 @@ void loop() {
     startingLEDState();
   }
   // Handle Display Handover
-  //displayMainState = (digitalRead(displayMainLDR) == LOW);
+  displayMainState = (digitalRead(displayMainLDR) == LOW);
   if (pending_release_display == true && coinEnable == true) {
     pending_release_display = false;
     kioskModeRequest("GameRunning");
-    //delay(6000);
-    setDisplayState(false);
+    if (currentGameSelected0 < 2) {
+      delay(6000);
+      setDisplayState(false);
+    }
   }
   // Drive LED Animations
   if (transition_leds == true) {
@@ -612,7 +787,34 @@ void loop() {
     }
     if (currentMillis - previousMillis >= transition_interval) {
       previousMillis = currentMillis;
-      if (currentStep <= numSteps) {
+      if (animation_mode == 2) {
+        numSteps = 3 * 33.2;
+        transition_interval = (unsigned long)(1000.0 * 4.0 / (float)numSteps);
+        if (currentStep <= numSteps) {
+          FastLED.setBrightness(map(currentStep, 0, numSteps, sourceBrightness, targetBrightness));
+          for (int row = 0; row < 60; ++row) {
+            for (int col = 0; col < 8; ++col) {
+              int i = row * 8 + col;
+              int hue = currentStep + i * 4; /* 4 is the hue step between LEDs */
+              leds_target[i] = ColorFromPalette(currentPalette, hue, 255, currentBlendType);
+              leds[i].r = map(currentStep, 0, numSteps, leds_source[i].r, leds_target[i].r);
+              leds[i].g = map(currentStep, 0, numSteps, leds_source[i].g, leds_target[i].g);
+              leds[i].b = map(currentStep, 0, numSteps, leds_source[i].b, leds_target[i].b);
+            }
+          }
+        } else {
+          for (int row = 0; row < 60; ++row) {
+            for (int col = 0; col < 8; ++col) {
+              int i = row * 8 + col;
+              int hue = currentStep + i * 4; /* 4 is the hue step between LEDs */
+              leds[i] = ColorFromPalette(currentPalette, hue, 255, currentBlendType);
+            }
+          }
+        }
+        FastLED.show();
+        currentStep++;
+        animation_state = 1;
+      } else if (currentStep <= numSteps) {
         FastLED.setBrightness(map(currentStep, 0, numSteps, sourceBrightness, targetBrightness));
         for (int i = 0; i < NUM_LEDS; i++) {
           leds[i].r = map(currentStep, 0, numSteps, leds_source[i].r, leds_target[i].r);
@@ -786,7 +988,62 @@ void cardReaderRXLoop( void * pvParameters ) {
     }
   }
 }
-//void allsControlRXLoop( void * pvParameters ) {
+void nuControlRXLoop( void * pvParameters ) {
+  for(;;) {
+    if (nuControl.available()) {
+      static String receivedMessage = "";
+      char c;
+      bool messageStarted = false;
+
+      while (nuControl.available()) {
+        c = nuControl.read();
+        if (c == '\n') {
+          if (!receivedMessage.isEmpty()) {
+            int delimiterIndex = receivedMessage.indexOf("::");
+            if (delimiterIndex != -1) {
+              int headerIndex = receivedMessage.indexOf("::");
+              String header = receivedMessage.substring(0, headerIndex);
+              if (header == "PS") {
+                int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+                String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
+                int valueInt = valueString.toInt();
+                if (valueInt >= 0 && valueInt <= 2) {
+                  currentNuPowerState0 = valueInt;
+                }
+              } else if (header == "DS") {
+                int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+                String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
+                int valueInt = valueString.toInt();
+                if (valueInt >= 0 && valueInt <= 9 && inhibitNuState == false) {
+                  currentGameSelected0 = valueInt;
+                }
+              } else if (header == "NS") {
+                int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+                String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
+                int valueInt = valueString.toInt();
+                if (valueInt >= 0 && valueInt <= 9 && inhibitNuState == false) {
+                  currentALLSLANMode0 = valueInt;
+                }
+              } else if (header == "R") {
+                int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+                String _nuResponse = receivedMessage.substring(headerIndex + 2, valueIndex);
+                _nuResponse.trim();
+                nuResponse = _nuResponse;
+                Serial.println("NU_CTRL::" + nuResponse);
+              }
+            }
+          }
+          receivedMessage = "";
+        } else {
+          receivedMessage += c;
+        }
+
+      }
+    } else {
+      delay(1);
+    }
+  }
+}
 
 void runtime() {
   int time_in_sec = esp_timer_get_time() / 1000000;
@@ -841,12 +1098,21 @@ void runtime() {
       displayIconDualMessage(1, (currentMarqueeState == 1), false, 398, "Marquee", (currentMarqueeState == 1) ? "Enabled" : "Disabled");
       displayState = 5;
     } else if (displayState != 6 && current_time >= 6 && current_time < 7) {
-      displayIconDualMessage(1, (currentLEDState == 1), false, 398, "LED Control", (currentLEDState == 0) ? "MCU" : "Game");
+      displayIconDualMessage(1, (displayMainState == false), false, (displayMainState == false) ? 250 : 129, "Display Source", (displayMainState == true) ? "PC" : "Game");
       displayState = 6;
     } else if (displayState != 7 && current_time >= 7 && current_time < 8) {
-      displayIconDualMessage(1, (coinEnable == true), false, 71, "Card Reader", (has_cr_talked == false) ? "No Data" : (coinEnable == true) ? "Enabled" : "Disabled");
+      displayIconDualMessage(1, (currentLEDState == 1), false, 398, "LED Control", (currentLEDState == 0) ? "MCU" : "Game");
       displayState = 7;
-    } else if (current_time >= 8) {
+    } else if (displayState != 8 && current_time >= 8 && current_time < 9) {
+      displayIconDualMessage(1, false, false, 141, "Game Disk", getGameSelect());
+      displayState = 8;
+    } else if (displayState != 9 && current_time >= 9 && current_time < 10) {
+      displayIconDualMessage(1, (coinEnable == true), false, 71, "Card Reader", (has_cr_talked == false) ? "No Data" : (coinEnable == true) ? "Enabled" : "Disabled");
+      displayState = 9;
+    } else if (displayState != 10 && current_time >= 10 && current_time < 11) {
+      displayIconDualMessage(1, false, false, 510, "ALLS Net", ((currentALLSLANMode0 == 0) ? "VPN" : "LAN"));
+      displayState = 10;
+    } else if (current_time >= 11) {
       displayedSec = time_in_sec;
     }
   }
@@ -939,9 +1205,27 @@ void displayIconDualMessage(int bright, bool invert, bool jpn, int icon, String 
   u8g2.sendBuffer();
 }
 
+String getGameSelect() {
+  String assembledOutput = "";
+  switch (requestedGameSelected0) {
+    case -1:
+      assembledOutput = "No Data";
+      break;
+    case 0:
+      assembledOutput = "Reverse";
+      break;
+    case 1:
+      assembledOutput = "Lilly";
+      break;
+    default:
+      assembledOutput = "Other";
+      break;
+  }
+  return assembledOutput;
+}
 String getPowerAuth() {
   String assembledOutput = "";
-  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -1) ? "Power Off" : (currentPowerState0 == 0) ? "Standby" : (coinEnable == false) ? "Startup" : "Active"));
+  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -1) ? "Power Off" : (currentPowerState0 == 0) ? ((enhancedStandby == true) ? "Enhanced Stby" : "Standby") : (coinEnable == false) ? "Startup" : "Active"));
   return assembledOutput;
 }
 void displayVolumeMessage() {
@@ -992,22 +1276,24 @@ void startingLEDState() {
   targetBrightness = 255;
   numSteps = 4.0 * 33.2;
   transition_interval = (unsigned long)(1000.0 * 4.0 / (float)numSteps);
-  int hue = 120;
-  int rowCount = 7;
-  for (int i = 0; i < NUM_LEDS; i++) {
-    CHSV in = CHSV(map(hue, 0,360,0,255), 255, 255 - (map((rowCount * 10), 0, 100, 0, 255)));
-    CRGB out;
-    hsv2rgb_rainbow(in, out);
-    leds_target[i] = out;
-    rowCount--;
-    if (rowCount <= -1) {
-      rowCount = 7;
-    }
-  }
+  // int hue = 120;
+  // int rowCount = 7;
+  // for (int i = 0; i < NUM_LEDS; i++) {
+  //   CHSV in = CHSV(map(hue, 0,360,0,255), 255, 255 - (map((rowCount * 10), 0, 100, 0, 255)));
+  //   CRGB out;
+  //   hsv2rgb_rainbow(in, out);
+  //   leds_target[i] = out;
+  //   rowCount--;
+  //   if (rowCount <= -1) {
+  //     rowCount = 7;
+  //   }
+  // }
   pending_release_leds = true;
   animation_state = -1;
-  animation_mode = 1;
+  // animation_mode = 1;
+  animation_mode = 2;
   currentStep = 0;
+  currentPalette = RainbowColors_p;
   transition_leds = true;
 }
 void shuttingDownLEDState(int state) {
@@ -1187,11 +1473,17 @@ void setMasterPowerOn() {
     kioskModeRequest("StartStandby");
     resetMarqueeState();
     setChassisFanSpeed(35);
-    setMainFanSpeed(25);
+    setMainFanSpeed((enhancedStandby == true) ? 100 : 25);
     delay(500);
     defaultLEDState();
     standbyLEDState();
     setDisplayState(true);
+    if (enhancedStandby == true) {
+      setGameDisk(2);
+      setSysBoardPower(true);
+    } else {
+      setSysBoardPower(false);
+    }
     currentPowerState0 = 0;
 
     pending_release_leds = false;
@@ -1202,25 +1494,35 @@ void setMasterPowerOn() {
     currentStep = 0;
     
     messageIcon = 223;
-    messageText = "Standby Mode";
+    messageText = (enhancedStandby == true) ? "Enhanced Stb Mode" : "Standby Mode";
     isJpnMessage = false;
     brightMessage = 255;
     invertMessage = false;
     timeoutMessage = 10;
     typeOfMessage = 1;
-  }
+  } else if (enhancedStandby == true && (currentNuPowerState0 == 0 || currentGameSelected0 != 2)) {
+    setGameDisk(2);
+    setSysBoardPower(true);
+  } else if (enhancedStandby == false && (currentNuPowerState0 == 1)) {
+    setSysBoardPower(false);
+  } 
   requestedPowerState0 = -1;
 }
 void setMasterPowerOff() {
   kioskModeRequest("StopAll");
   setChassisFanSpeed(0);
-  setMainFanSpeed(15);
+  setMainFanSpeed((enhancedStandby == true) ? 75 : 15);
   setLEDControl(true);
   setMarqueeState(false, false);
   if (currentPowerState0 == 1) {
-    delay(500);
-    setSysBoardPower(false);
-    delay(200);  
+    if (enhancedStandby == true) {
+      setGameDisk(2);
+      setSysBoardPower(true);
+    } else {
+      delay(500);
+      setSysBoardPower(false);
+      delay(200);
+    }
     loopMelody = -1;
     melodyPlay = 1;
     currentNote = 0;
@@ -1261,6 +1563,9 @@ void setGameOn() {
     setMainFanSpeed(100);
     startingLEDState();
     setMarqueeState(true, false);
+    if (requestedGameSelected0 != currentGameSelected0) {
+      setGameDisk(requestedGameSelected0);
+    }
     setSysBoardPower(true);
     setDisplayState(true);
     
@@ -1299,13 +1604,18 @@ void setGameOff() {
 
     setDisplayState(true);
     setChassisFanSpeed(35);
-    setMainFanSpeed(25);
+    setMainFanSpeed((enhancedStandby == true) ? 100 : 25);
     kioskModeRequest("StartStandby");
     setLEDControl(true);
     delay(250);
     standbyLEDState();
     resetMarqueeState();
-    setSysBoardPower(false);
+    if (enhancedStandby == true) {
+      setGameDisk(2);
+      setSysBoardPower(true);
+    } else {
+      setSysBoardPower(false);
+    }
     
     loopMelody = -1;
     melodyPlay = 1;
@@ -1342,7 +1652,14 @@ void requestStandby() {
 }
 
 void setSysBoardPower(bool state) {
+  nuResponse = "";
+  while (currentNuPowerState0 == ((state == true) ? 0 : 1)) {
+    nuControl.print("PS::");
+    nuControl.println(((state == true) ? "1" : "0"));
+    delay(100);
+  }
   digitalWrite(relayPins[3], (state == true) ? HIGH : LOW);
+  digitalWrite(relayPins[4], (currentGameSelected0 < 2) ? ((state == true) ? HIGH : LOW) : LOW);
   delay((state == true) ? 200 : 500);
 }
 void setLEDControl(bool state) {
@@ -1358,12 +1675,17 @@ void setIOPower(bool state) {
   delay(750);
   digitalWrite(relayPins[2], (state == true) ? HIGH : LOW);
 }
+void resetPSU() {
+  digitalWrite(relayPins[4], LOW);
+  delay(2000);
+  digitalWrite(relayPins[4], HIGH);
+}
 void resetMarqueeState() {
-  digitalWrite(relayPins[4], (currentMarqueeState == 1) ? HIGH : LOW);
+  digitalWrite(relayPins[5], (currentMarqueeState == 1) ? HIGH : LOW);
 }
 void setMarqueeState(bool state, bool save) {
   if (currentPowerState0 != -1) {
-    digitalWrite(relayPins[4], (state == true) ? HIGH : LOW);
+    digitalWrite(relayPins[5], (state == true) ? HIGH : LOW);
   }
   if (save == true) {
     currentMarqueeState = (state == true) ? 1 : 0;
@@ -1377,10 +1699,49 @@ void setMainFanSpeed(int speed) {
   currentFan2Speed = map(speed, 0, 100, 0, 255);
   analogWrite(fanPWM2, currentFan2Speed);
 }
+void setGameDisk(int number) {
+  inhibitNuState = false;
+  nuResponse = "";
+  while (currentGameSelected0 != number) {
+    nuControl.print("DS::");
+    nuControl.println(String(number));
+    delay(100);
+  }
+  if (currentPowerState0 == 1) {
+      setSysBoardPower(true);
+      setDisplayState(true);
+    if (number < 2) {
+      resetPSU();
+      startingLEDState();
+      startLoadingScreen();
+    }
+  }
+  messageIcon = 129;
+  messageText = "HDD: ";
+  switch (number) {
+    case 0:
+      messageText += "Reverse";
+      break;
+    case 1:
+      messageText += "Lilly";
+      break;
+    case 2:
+      messageText += "Enhanced STB";
+      break;
+    default:
+      messageText += "???";
+      break;
+  }
+  invertMessage = (currentPowerState0 == 1);
+  isJpnMessage = false;
+  brightMessage = 255;
+  timeoutMessage = 10;
+  typeOfMessage = 1;
+}
 void setDisplayState(bool state) {
-  //if (state != displayMainState) {
-  //  pushDisplaySwitch();
-  //}
+  if (state != displayMainState) {
+    pushDisplaySwitch();
+  }
 }
 void resetState() {
   setLEDControl((currentPowerState0 != 1));
@@ -1388,7 +1749,7 @@ void resetState() {
     delay(800);
     setLEDControl(false);
   }
-  setDisplayState(false);
+  setDisplayState((currentGameSelected0 >= 2 || currentPowerState0 != 1));
   kioskModeRequest("ResetState");
   startMelody = false;
   melodyPlay = -1;
@@ -1411,6 +1772,12 @@ void resetInactivityTimer() {
   inactivityMinTimeout = defaultInactivityMinTimeout + 20;
 }
 
+void pushDisplaySwitch() {
+  digitalWrite(displayMainSelect, HIGH);
+  digitalWrite(displayMainSelect, LOW);
+  delay(500);
+  digitalWrite(displayMainSelect, HIGH);
+}
 
 void kioskModeRequest(String command) {
   Serial.println("");
@@ -1504,7 +1871,7 @@ void kioskCommand() {
               } else if (valueString == "STANDBY") {
                 if (currentPowerState0 == 1) {
                   setGameOff();
-                } else if (currentPowerState0 == -1) {
+                } else if (currentPowerState0 == -1 || (currentPowerState0 == 0 && currentNuPowerState0 != ((enhancedStandby == true) ? 1 : 0))) {
                   setMasterPowerOn();
                 }
               } else if (valueString == "ON") {
@@ -1530,6 +1897,22 @@ void kioskCommand() {
               } else if (valueString == "?") {
                 Serial.println("R::" + String((requestedPowerState0 == -1) ? "Power Off" : (requestedPowerState0 == 0) ? "Standby" : "None"));
               }
+            } else if (header == "ENHANCED_STANDBY") {
+              int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+              String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
+              if (valueString == "DISABLE") {
+                enhancedStandby = false;
+                if (currentPowerState0 == 0 || currentNuPowerState0 == 0) {
+                  setMasterPowerOn();
+                }
+              } else if (valueString == "ENABLE") {
+                enhancedStandby = true;
+                if (currentPowerState0 == 0 || currentNuPowerState0 == 0) {
+                  setMasterPowerOn();
+                }
+              } else if (valueString == "?") {
+                Serial.println("R::" + String((enhancedStandby == true) ? "Enable" : "Disabled"));
+              }
             } else if (header == "INACTIVITY_TIMER") {
               int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
@@ -1543,6 +1926,15 @@ void kioskCommand() {
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
               if (valueString == "?") {
                 Serial.println("R::" + String((currentPowerState0 == 1) ? String(shutdownDelayMinTimeout - ((millis() - previousShutdownMillis) / 1000)) : "0"));
+              }
+            } else if (header == "DISK_SELECT") {
+              int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+              String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
+              if (valueString == "?") {
+                Serial.println("R::" + getGameSelect());
+              } else {
+                int valueInt = valueString.toInt();
+                setGameDisk(valueInt);
               }
             } else if (header == "STATE") {
               int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);

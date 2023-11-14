@@ -9,6 +9,8 @@
 #include <IRremote.hpp>
 #include "melody.h"
 
+// PIN 35, 36, 37, 38 (LED) CAN NOT USE ASSIGNED
+
 const char* ssid = "Radio Noise AX";
 const char* password = "Radio Noise AX";
 WebServer server(80);
@@ -176,9 +178,9 @@ void checkWiFiConnection() {
     tone(buzzer_pin, NOTE_CS5, 1000 / 8);
     int tryCount = 0;
     while (WiFi.status() != WL_CONNECTED) {
-      //if (tryCount > 60 && currentPowerState0 != 1) {
-      //  ESP.restart();
-      //}
+      if (tryCount > 60 && currentPowerState0 != 1) {
+        ESP.restart();
+      }
       tone(buzzer_pin, (tryCount % 2 == 0) ? NOTE_GS5 : NOTE_CS5, 1000 / 8);
       delay(500);
       tryCount++;
@@ -1272,10 +1274,10 @@ void runtime() {
       displayIconDualMessage(1, (coinEnable == true), false, 71, "Card Reader", (has_cr_talked == false) ? "No Data" : (coinEnable == true) ? "Enabled" : "Disabled");
       displayState = 9;
     } else if (displayState != 10 && current_time >= 10 && current_time < 11) {
-      displayIconDualMessage(1, false, false, 510, "Net: Chunithm", getEthSwitchVal(0));
+      displayIconDualMessage(1, false, false, 510, "Net: Chunithm", getEthSwitchVal(1));
       displayState = 10;
     } else if (displayState != 11 && current_time >= 11 && current_time < 12) {
-      displayIconDualMessage(1, false, false, 510, "Net: WACCA", getEthSwitchVal(1));
+      displayIconDualMessage(1, false, false, 510, "Net: WACCA", getEthSwitchVal(0));
       displayState = 11;
     } else if (current_time >= 12) {
       displayedSec = time_in_sec;
