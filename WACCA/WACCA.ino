@@ -15,8 +15,9 @@ WebServer server(80);
 // 0 - Green - Display + PSU Enable
 // 1 - Yellow - LED Select (Default ESP)
 // 2 - Orange - LED 5V Enable
-// 3 - Red - ALLS + IO 12V/5V Enable
-// 4 - White - Marquee
+// 3 - Red - ALLS Power
+// 4 - Red - IO 12V/5V Enable
+// 5 - White - Marquee
 int relayPins[6] = { 12, 14, 27, 26, 18, 25 };
 int numRelays = 6;
 // ALLS CONTROL PORT ("Wide" Pin Version)
@@ -467,15 +468,15 @@ void setup() {
   server.on("/enhanced_standby/enable", [=]() {
     server.send(200, "text/plain", (enhancedStandby == true) ? "UNCHANGED" : "OK");
     enhancedStandby = true;
-    if (currentPowerState0 == 0 && currentNuPowerState0 == 0) {
-      setMasterPowerOn();
+    if (currentPowerState0 != 1 && currentNuPowerState0 == 0) {
+      enterEnhancedStandby(true);
     }
   });
   server.on("/enhanced_standby/disable", [=]() {
     server.send(200, "text/plain", (enhancedStandby == false) ? "UNCHANGED" : "OK");
     enhancedStandby = false;
-    if (currentPowerState0 == 0 && currentNuPowerState0 == 1) {
-      setMasterPowerOn();
+    if (currentPowerState0 != 1 && currentNuPowerState0 == 1) {
+      enterEnhancedStandby(false);
     }
   });
   server.on("/enhanced_standby", [=]() {
@@ -1225,7 +1226,7 @@ String getGameSelect() {
 }
 String getPowerAuth() {
   String assembledOutput = "";
-  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -1) ? "Power Off" : (currentPowerState0 == 0) ? ((enhancedStandby == true) ? "Enhanced Stby" : "Standby") : (coinEnable == false) ? "Startup" : "Active"));
+  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -1) ? "Power Off" : (currentPowerState0 == 0) ? ((enhancedStandby == true) ? "E. Standby" : "Standby") : (coinEnable == false) ? "Startup" : "Active"));
   return assembledOutput;
 }
 void displayVolumeMessage() {
@@ -1479,8 +1480,7 @@ void setMasterPowerOn() {
     standbyLEDState();
     setDisplayState(true);
     if (enhancedStandby == true) {
-      setGameDisk(2);
-      setSysBoardPower(true);
+      enterEnhancedStandby(true);
     } else {
       setSysBoardPower(false);
     }
@@ -1494,17 +1494,16 @@ void setMasterPowerOn() {
     currentStep = 0;
     
     messageIcon = 223;
-    messageText = (enhancedStandby == true) ? "Enhanced Stb Mode" : "Standby Mode";
+    messageText = (enhancedStandby == true) ? "E. Standby Mode" : "Standby Mode";
     isJpnMessage = false;
     brightMessage = 255;
     invertMessage = false;
     timeoutMessage = 10;
     typeOfMessage = 1;
   } else if (enhancedStandby == true && (currentNuPowerState0 == 0 || currentGameSelected0 != 2)) {
-    setGameDisk(2);
-    setSysBoardPower(true);
+    enterEnhancedStandby(true);
   } else if (enhancedStandby == false && (currentNuPowerState0 == 1)) {
-    setSysBoardPower(false);
+    enterEnhancedStandby(false);
   } 
   requestedPowerState0 = -1;
 }
@@ -1516,8 +1515,7 @@ void setMasterPowerOff() {
   setMarqueeState(false, false);
   if (currentPowerState0 == 1) {
     if (enhancedStandby == true) {
-      setGameDisk(2);
-      setSysBoardPower(true);
+      enterEnhancedStandby(true);
     } else {
       delay(500);
       setSysBoardPower(false);
@@ -1566,8 +1564,8 @@ void setGameOn() {
     if (requestedGameSelected0 != currentGameSelected0) {
       setGameDisk(requestedGameSelected0);
     }
-    setSysBoardPower(true);
     setDisplayState(true);
+    setSysBoardPower(true);
     
     melodyPlay = 0;
     loopMelody = -1;
@@ -1611,8 +1609,7 @@ void setGameOff() {
     standbyLEDState();
     resetMarqueeState();
     if (enhancedStandby == true) {
-      setGameDisk(2);
-      setSysBoardPower(true);
+      enterEnhancedStandby(true);
     } else {
       setSysBoardPower(false);
     }
@@ -1651,14 +1648,39 @@ void requestStandby() {
   }
 }
 
+void enterEnhancedStandby(bool state) {
+  inhibitNuState = false;
+  if (state == true) {
+    digitalWrite(relayPins[3], HIGH);
+    digitalWrite(relayPins[4], LOW);
+    nuResponse = "";
+    while (currentGameSelected0 != 2) {
+      nuControl.println("DS::2");
+      delay(100);
+    }
+    nuResponse = "";
+    while (currentNuPowerState0 == 0) {
+      nuControl.println("PS::1");
+      delay(100);
+    }
+  } else {
+    nuResponse = "";
+    while (currentNuPowerState0 == 1) {
+      nuControl.println("PS::0");
+      delay(100);
+    }
+    digitalWrite(relayPins[3], LOW);
+    digitalWrite(relayPins[4], LOW);
+  }
+}
 void setSysBoardPower(bool state) {
   nuResponse = "";
+  digitalWrite(relayPins[3], (state == true) ? HIGH : LOW);
   while (currentNuPowerState0 == ((state == true) ? 0 : 1)) {
     nuControl.print("PS::");
     nuControl.println(((state == true) ? "1" : "0"));
     delay(100);
   }
-  digitalWrite(relayPins[3], (state == true) ? HIGH : LOW);
   digitalWrite(relayPins[4], (currentGameSelected0 < 2) ? ((state == true) ? HIGH : LOW) : LOW);
   delay((state == true) ? 200 : 500);
 }
@@ -1902,13 +1924,13 @@ void kioskCommand() {
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
               if (valueString == "DISABLE") {
                 enhancedStandby = false;
-                if (currentPowerState0 == 0 || currentNuPowerState0 == 0) {
-                  setMasterPowerOn();
+                if (currentPowerState0 != 1){
+                  enterEnhancedStandby(false);
                 }
               } else if (valueString == "ENABLE") {
                 enhancedStandby = true;
-                if (currentPowerState0 == 0 || currentNuPowerState0 == 0) {
-                  setMasterPowerOn();
+                if (currentPowerState0 != 1){
+                  enterEnhancedStandby(true);
                 }
               } else if (valueString == "?") {
                 Serial.println("R::" + String((enhancedStandby == true) ? "Enable" : "Disabled"));

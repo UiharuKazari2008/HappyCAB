@@ -8,6 +8,10 @@ const int power_en_pin = 5;
 const int eth_select_state = 7;
 const int eth_select_btn = 6;
 
+const int motherboard_pwr_btn = 8;
+const int motherboard_rst_btn = 9;
+const int motherboard_pwr_led = 10;
+
 void setup() {
   Serial.begin(9600);
   pinMode(LED_BUILTIN, OUTPUT);
@@ -17,6 +21,11 @@ void setup() {
   pinMode(eth_select_state, INPUT);
   pinMode(eth_select_btn, OUTPUT);
   digitalWrite(eth_select_btn, HIGH);
+  pinMode(motherboard_pwr_btn, OUTPUT);
+  pinMode(motherboard_rst_btn, OUTPUT);
+  pinMode(motherboard_pwr_led, INPUT);
+  digitalWrite(motherboard_pwr_btn, HIGH);
+  digitalWrite(motherboard_rst_btn, HIGH);
   for (int i=0; i < num_of_disks; i++) {
     pinMode(game_disks[i], OUTPUT);
     digitalWrite(game_disks[i], LOW);
@@ -61,8 +70,13 @@ void loop() {
 
 void sendStatus() {
   Serial.println("PS::" + String(system_power_state));
+  delay(100);
+  Serial.println("MPS::" + String(digitalRead(motherboard_pwr_led)));
+  delay(100);
   Serial.println("DS::" + String(selected_game_disk));
+  delay(100);
   Serial.println("NS::" + String((digitalRead(eth_select_state) == LOW) ? "0" : "1"));
+  delay(100);
 };
 void receivedMessage() {
   static String receivedMessage = "";
@@ -129,6 +143,7 @@ String setPowerOn() {
       selectNetwork((selected_game_disk == 2));
       digitalWrite(game_disks[selected_game_disk], HIGH);
       digitalWrite(power_en_pin, HIGH);
+      ensurePowerOn();
       system_power_state = 1;
       blinkNum = 0;
       return "OK";
@@ -146,6 +161,7 @@ String setPowerOn() {
 }
 String setPowerOff() {
   if (system_power_state != 0) {
+    handleShutdown();
     digitalWrite(power_en_pin, LOW);
     delay(450);
     for (int i=0; i < num_of_disks; i++) {
@@ -157,14 +173,46 @@ String setPowerOff() {
     return "NC";
   }
 }
+void handleShutdown() {
+  // Enhanced Standby, Proper Shutdown
+  if (selected_game_disk == 2) {
+    digitalWrite(motherboard_pwr_btn, HIGH);
+    digitalWrite(motherboard_pwr_btn, LOW);
+    delay(200);
+    digitalWrite(motherboard_pwr_btn, HIGH);
+    while (digitalRead(motherboard_pwr_led) == HIGH) {
+      delay(10);
+    }
+    delay(500);
+  }
+}
+String resetPower(int disk_num) {
+  if (system_power_state != 0) {
+    if (selected_game_disk == 2) {
+      handleShutdown();
+    }
+    digitalWrite(power_en_pin, LOW);
+    for (int i=0; i < num_of_disks; i++) {
+      digitalWrite(game_disks[i], LOW);
+    }
+    selected_game_disk = disk_num;
+    digitalWrite(game_disks[selected_game_disk], HIGH);
+    delay(500);
+    digitalWrite(power_en_pin, HIGH);
+    selectNetwork((selected_game_disk == 2));
+    ensurePowerOn();
+    return "OK";
+  } else {
+    return setPowerOn();
+  }
+}
 String setGameDisk(int disk_num) {
   if (selected_game_disk != disk_num) {
-    selected_game_disk = disk_num;
     if (system_power_state == 1 && selected_game_disk < 10) {
-      String power_off = setPowerOff();
-      String power_on = setPowerOn();
+      String power_rst = resetPower(disk_num);
       return "RST";
     } else {
+      selected_game_disk = disk_num;
       return "OK";
     }
   } else {
@@ -177,5 +225,16 @@ void selectNetwork(bool state) {
     digitalWrite(eth_select_btn, LOW);
     delay(250);
     digitalWrite(eth_select_btn, HIGH);
+    delay(200);
+  }
+}
+void ensurePowerOn() {
+  delay(1000);
+  while (digitalRead(motherboard_pwr_led) == LOW) {
+    digitalWrite(motherboard_pwr_btn, HIGH);
+    digitalWrite(motherboard_pwr_btn, LOW);
+    delay(500);
+    digitalWrite(motherboard_pwr_btn, HIGH);
+    delay(2000);
   }
 }
