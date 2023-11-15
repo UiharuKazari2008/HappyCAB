@@ -1658,16 +1658,20 @@ void enterEnhancedStandby(bool state) {
       nuControl.println("DS::2");
       delay(100);
     }
-    nuResponse = "";
-    while (currentNuPowerState0 == 0) {
-      nuControl.println("PS::1");
-      delay(100);
+    if (currentNuPowerState0 == 0) {
+      nuResponse = "";
+      while (currentNuPowerState0 == 0) {
+        nuControl.println("PS::1");
+        delay(100);
+      }
     }
-  } else {
-    nuResponse = "";
-    while (currentNuPowerState0 == 1) {
-      nuControl.println("PS::0");
-      delay(100);
+  } else if (state == false) {
+    if (currentNuPowerState0 == 1) {
+      nuResponse = "";
+      while (currentNuPowerState0 == 1) {
+        nuControl.println("PS::0");
+        delay(100);
+      }
     }
     digitalWrite(relayPins[3], LOW);
     digitalWrite(relayPins[4], LOW);
@@ -1924,12 +1928,12 @@ void kioskCommand() {
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
               if (valueString == "DISABLE") {
                 enhancedStandby = false;
-                if (currentPowerState0 != 1){
+                if (currentPowerState0 != 1) {
                   enterEnhancedStandby(false);
                 }
               } else if (valueString == "ENABLE") {
                 enhancedStandby = true;
-                if (currentPowerState0 != 1){
+                if (currentPowerState0 != 1) {
                   enterEnhancedStandby(true);
                 }
               } else if (valueString == "?") {
