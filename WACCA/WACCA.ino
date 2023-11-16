@@ -128,6 +128,7 @@ bool inhibitNuState = false;
 int currentGameSelected0 = -1;
 int requestedGameSelected0 = 0;
 int currentNuPowerState0 = -1;
+int currentNuBoardState0 = -1;
 bool enhancedStandby = false;
 int currentALLSLANMode0 = 0;
 int currentPowerState0 = -1;
@@ -202,7 +203,7 @@ void setup() {
 
   tone(buzzer_pin, NOTE_C6);
   bootScreen("NU_CTRL_COM");
-  nuControl.begin(9600, SWSERIAL_8N1, nuControlRX, nuControlTX, false);
+  nuControl.begin(4800, SWSERIAL_8N1, nuControlRX, nuControlTX, false);
   if (!nuControl) {
     bootScreen("NU_COM_FAIL");
     while (1) { // Don't continue with invalid configuration
@@ -1011,6 +1012,13 @@ void nuControlRXLoop( void * pvParameters ) {
                 if (valueInt >= 0 && valueInt <= 2) {
                   currentNuPowerState0 = valueInt;
                 }
+              } else if (header == "BS") {
+                int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+                String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
+                int valueInt = valueString.toInt();
+                if (valueInt >= 0 && valueInt <= 2) {
+                  currentNuBoardState0 = valueInt;
+                }
               } else if (header == "DS") {
                 int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
                 String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
@@ -1031,6 +1039,11 @@ void nuControlRXLoop( void * pvParameters ) {
                 _nuResponse.trim();
                 nuResponse = _nuResponse;
                 Serial.println("NU_CTRL::" + nuResponse);
+              } else if (header == "DBG") {
+                int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+                String _nuResponse = receivedMessage.substring(headerIndex + 2, valueIndex);
+                _nuResponse.trim();
+                Serial.println("NU_CTRL_DEBUGGER::" + _nuResponse);
               }
             }
           }
@@ -1500,11 +1513,7 @@ void setMasterPowerOn() {
     invertMessage = false;
     timeoutMessage = 10;
     typeOfMessage = 1;
-  } else if (enhancedStandby == true && (currentNuPowerState0 == 0 || currentGameSelected0 != 2)) {
-    enterEnhancedStandby(true);
-  } else if (enhancedStandby == false && (currentNuPowerState0 == 1)) {
-    enterEnhancedStandby(false);
-  } 
+  }
   requestedPowerState0 = -1;
 }
 void setMasterPowerOff() {
@@ -1654,23 +1663,29 @@ void enterEnhancedStandby(bool state) {
     digitalWrite(relayPins[3], HIGH);
     digitalWrite(relayPins[4], LOW);
     nuResponse = "";
-    while (currentGameSelected0 != 2) {
+    int i = 0;
+    while (currentGameSelected0 != 2 && i < 5) {
       nuControl.println("DS::2");
-      delay(100);
+      delay(500);
+      i++;
     }
+    i = 0;
     if (currentNuPowerState0 == 0) {
       nuResponse = "";
-      while (currentNuPowerState0 == 0) {
-        nuControl.println("PS::1");
-        delay(100);
+      while (currentNuPowerState0 == 0 && i < 5) {
+        nuControl.println("PS::1::");
+        delay(500);
+        i++;
       }
     }
   } else if (state == false) {
     if (currentNuPowerState0 == 1) {
+      int i = 0;
       nuResponse = "";
-      while (currentNuPowerState0 == 1) {
-        nuControl.println("PS::0");
-        delay(100);
+      while (currentNuPowerState0 == 1 && i < 5) {
+        nuControl.println("PS::0::");
+        delay(500);
+        i++;
       }
     }
     digitalWrite(relayPins[3], LOW);

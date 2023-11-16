@@ -11,10 +11,12 @@ const int eth_select_btn = 6;
 const int motherboard_pwr_btn = 8;
 const int motherboard_rst_btn = 9;
 const int motherboard_pwr_led = 10;
+const int standby_led = 11;
 
 void setup() {
-  Serial.begin(9600);
+  Serial.begin(4800);
   pinMode(LED_BUILTIN, OUTPUT);
+  pinMode(standby_led, OUTPUT);
   digitalWrite(LED_BUILTIN, LOW);
   pinMode(power_en_pin, OUTPUT);
   digitalWrite(power_en_pin, LOW);
@@ -26,6 +28,7 @@ void setup() {
   pinMode(motherboard_pwr_led, INPUT);
   digitalWrite(motherboard_pwr_btn, HIGH);
   digitalWrite(motherboard_rst_btn, HIGH);
+  digitalWrite(standby_led, LOW);
   for (int i=0; i < num_of_disks; i++) {
     pinMode(game_disks[i], OUTPUT);
     digitalWrite(game_disks[i], LOW);
@@ -75,7 +78,7 @@ void sendStatus() {
       Serial.println("PS::" + String(system_power_state));
       break;
     case 1:
-      Serial.println("MPS::" + String(digitalRead(motherboard_pwr_led)));
+      Serial.println("BS::" + String(digitalRead(motherboard_pwr_led) == LOW));
       break;
     case 2:
       Serial.println("DS::" + String(selected_game_disk));
@@ -160,6 +163,7 @@ String setPowerOn() {
       digitalWrite(game_disks[selected_game_disk], HIGH);
       Serial.println("DBG::POWER_EN");
       digitalWrite(power_en_pin, HIGH);
+      digitalWrite(standby_led, (selected_game_disk == 2));
       Serial.println("DBG::POWER_CHECK");
       ensurePowerOn();
       Serial.println("DBG::DONE");
@@ -190,6 +194,7 @@ String setPowerOff() {
     for (int i=0; i < num_of_disks; i++) {
       digitalWrite(game_disks[i], LOW);
     }
+    digitalWrite(standby_led, LOW);
     Serial.println("DBG::DONE");
     system_power_state = 0;
     return "OK";
@@ -204,9 +209,9 @@ void handleShutdown() {
     digitalWrite(motherboard_pwr_btn, LOW);
     delay(200);
     digitalWrite(motherboard_pwr_btn, HIGH);
-    while (digitalRead(motherboard_pwr_led) == HIGH) {
+    while (digitalRead(motherboard_pwr_led) == LOW) {
       Serial.println("DBG::POWER_WAIT");
-      delay(10);
+      delay(100);
     }
     delay(500);
   }
@@ -234,6 +239,7 @@ String resetPower(int disk_num) {
     Serial.println("DBG::NET_SET");
     selectNetwork((selected_game_disk == 2));
     Serial.println("DBG::POWER_CHECK");
+    digitalWrite(standby_led, (selected_game_disk == 2));
     ensurePowerOn();
     return "OK";
   } else {
@@ -264,7 +270,7 @@ void selectNetwork(bool state) {
 }
 void ensurePowerOn() {
   delay(1000);
-  while (digitalRead(motherboard_pwr_led) == LOW) {
+  while (digitalRead(motherboard_pwr_led) == HIGH) {
     Serial.println("DBG::POWER_ON_REQ");
     digitalWrite(motherboard_pwr_btn, HIGH);
     digitalWrite(motherboard_pwr_btn, LOW);
