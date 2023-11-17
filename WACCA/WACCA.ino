@@ -91,7 +91,7 @@ int boot_tone_dur[] = {
 };
 // Occupancy and Timer
 int requestedPowerState0 = -1;
-const int defaultInactivityMinTimeout = 45;
+int defaultInactivityMinTimeout = 45;
 int inactivityMinTimeout = 45;
 const int shutdownDelayMinTimeout = 5;
 unsigned long previousInactivityMillis = 0; 
@@ -486,15 +486,24 @@ void setup() {
 
   server.on("/test/alls/off", [=]() {
     setDisplayState(true);
-    nuResponse = "";
-    while (currentNuPowerState0 == 1) {
-      nuControl.println("PS::0");
-      delay(100);
+    if (enhancedStandby == true) {
+      enterEnhancedStandby(true);
+    } else {
+      nuResponse = "";
+      while (currentNuPowerState0 == 1) {
+        nuControl.println("PS::0");
+        delay(100);
+      }
+      digitalWrite(relayPins[3], LOW);
     }
     server.send(200, "text/plain", "OK");
   });
   server.on("/test/alls/on", [=]() {
     setDisplayState(false);
+    digitalWrite(relayPins[3], HIGH);
+    if (requestedGameSelected0 != currentGameSelected0) {
+      setGameDisk(requestedGameSelected0);
+    }
     nuResponse = "";
     while (currentNuPowerState0 == 0) {
       nuControl.println("PS::1");
@@ -566,7 +575,8 @@ void setup() {
   
   server.on("/timeout/on", [=]() {
     if (inactivityTimeout == false) {
-      inactivityTimeout == true;
+      resetInactivityTimer();
+      inactivityTimeout = true;
       server.send(200, "text/plain", "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
@@ -574,11 +584,20 @@ void setup() {
   });
   server.on("/timeout/off", [=]() {
      if (inactivityTimeout == true) {
-      inactivityTimeout == false;
+      inactivityTimeout = false;
       server.send(200, "text/plain", "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
+  });
+  server.on("/timeout/set", [=]() {
+    String response = "UNCHANGED";
+    if (server.hasArg("time")) {
+      int _time = server.arg("time").toInt();
+      defaultInactivityMinTimeout = _time;
+      resetInactivityTimer();
+    }
+    server.send(200, "text/plain", response);
   });
 
   server.on("/marquee/on", [=]() {
@@ -1959,6 +1978,12 @@ void kioskCommand() {
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
               if (valueString == "RESET") {
                 resetInactivityTimer();
+              } else if (valueString == "SET") {
+                int timeIndex = receivedMessage.indexOf("::", valueIndex + 2);
+                String timeString = receivedMessage.substring(valueIndex + 2, timeIndex);
+                int timeInt = timeString.toInt();
+                defaultInactivityMinTimeout = timeInt;
+                resetInactivityTimer();
               } else if (valueString == "?") {
                 Serial.println("R::" + String((currentPowerState0 == 1 && inactivityTimeout == true) ? String(inactivityMinTimeout - ((millis() - previousInactivityMillis) / 1000)) : "0"));
               }
@@ -1975,7 +2000,10 @@ void kioskCommand() {
                 Serial.println("R::" + getGameSelect());
               } else {
                 int valueInt = valueString.toInt();
-                setGameDisk(valueInt);
+                requestedGameSelected0 = valueInt;
+                if (enhancedStandby == false || currentPowerState0 == 1) {
+                  setGameDisk(valueInt);
+                }
               }
             } else if (header == "STATE") {
               int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
