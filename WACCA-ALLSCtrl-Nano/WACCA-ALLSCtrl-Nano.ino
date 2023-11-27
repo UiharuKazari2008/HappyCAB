@@ -205,10 +205,13 @@ String setPowerOff() {
 void handleShutdown() {
   // Enhanced Standby, Proper Shutdown
   if (selected_game_disk == 2) {
-    digitalWrite(motherboard_pwr_btn, HIGH);
-    digitalWrite(motherboard_pwr_btn, LOW);
-    delay(200);
-    digitalWrite(motherboard_pwr_btn, HIGH);
+    for (int i = 0; i <= 2; i++) {
+      digitalWrite(motherboard_pwr_btn, HIGH);
+      digitalWrite(motherboard_pwr_btn, LOW);
+      delay(300);
+      digitalWrite(motherboard_pwr_btn, HIGH);
+      delay(500);
+    }
     while (digitalRead(motherboard_pwr_led) == LOW) {
       Serial.println("DBG::POWER_WAIT");
       delay(100);

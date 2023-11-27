@@ -513,10 +513,11 @@ void setup() {
   });
   server.on("/test/alls/reset", [=]() {
     setDisplayState(false);
-    nuResponse = "";
-    while (nuResponse == "") {
+    int i = 0;
+    while (currentGameSelected0 != 2 && i < 5) {
       nuControl.println("PS::128");
-      delay(100);
+      delay(125);
+      i++;
     }
     server.send(200, "text/plain", "OK");
   });
@@ -1117,7 +1118,7 @@ void runtime() {
       } else {
         volume = "Muted";
       }
-      displayIconDualMessage(1, (currentVolume >= 50 || muteVolume == true), false, 484, "Speakers", volume.c_str());
+      displayIconDualMessage(1, (currentVolume >= 50 || muteVolume == true), false, 578, "Speakers", volume.c_str());
       displayState = 3;
     } else if (displayState != 4 && current_time >= 4 && current_time < 5) {
       String fan = "";
@@ -1140,10 +1141,10 @@ void runtime() {
       displayIconDualMessage(1, false, false, 141, "Game Disk", getGameSelect());
       displayState = 8;
     } else if (displayState != 9 && current_time >= 9 && current_time < 10) {
-      displayIconDualMessage(1, (coinEnable == true), false, 71, "Card Reader", (has_cr_talked == false) ? "No Data" : (coinEnable == true) ? "Enabled" : "Disabled");
+      displayIconDualMessage(1, (currentALLSLANMode0 == 0), false, 109, "ALLS Ethernet", ((currentALLSLANMode0 == 0) ? "VPN" : "LAN"));
       displayState = 9;
     } else if (displayState != 10 && current_time >= 10 && current_time < 11) {
-      displayIconDualMessage(1, false, false, 510, "ALLS Net", ((currentALLSLANMode0 == 0) ? "VPN" : "LAN"));
+      displayIconDualMessage(1, (coinEnable == true), false, 71, "Card Reader", (has_cr_talked == false) ? "No Data" : (coinEnable == true) ? "Enabled" : "Disabled");
       displayState = 10;
     } else if (current_time >= 11) {
       displayedSec = time_in_sec;
@@ -1254,11 +1255,14 @@ String getGameSelect() {
       assembledOutput = "Other";
       break;
   }
+  if (enhancedStandby == true) {
+    assembledOutput += "*";
+  }
   return assembledOutput;
 }
 String getPowerAuth() {
   String assembledOutput = "";
-  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -1) ? "Power Off" : (currentPowerState0 == 0) ? ((enhancedStandby == true) ? "E. Standby" : "Standby") : (coinEnable == false) ? "Startup" : "Active"));
+  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -1) ? ((enhancedStandby == true) ? "Power Off (E)" : "Power Off") : (currentPowerState0 == 0) ? ((enhancedStandby == true) ? "Standby (E)" : "Standby") : (coinEnable == false) ? "Startup" : "Active"));
   return assembledOutput;
 }
 void displayVolumeMessage() {
@@ -1683,17 +1687,17 @@ void enterEnhancedStandby(bool state) {
     digitalWrite(relayPins[4], LOW);
     nuResponse = "";
     int i = 0;
-    while (currentGameSelected0 != 2 && i < 5) {
+    while (currentGameSelected0 != 2 && i < 10) {
       nuControl.println("DS::2");
-      delay(500);
+      delay(125);
       i++;
     }
     i = 0;
     if (currentNuPowerState0 == 0) {
       nuResponse = "";
-      while (currentNuPowerState0 == 0 && i < 5) {
+      while (currentNuPowerState0 == 0 && i < 10) {
         nuControl.println("PS::1::");
-        delay(500);
+        delay(125);
         i++;
       }
     }
@@ -1701,9 +1705,9 @@ void enterEnhancedStandby(bool state) {
     if (currentNuPowerState0 == 1) {
       int i = 0;
       nuResponse = "";
-      while (currentNuPowerState0 == 1 && i < 5) {
+      while (currentNuPowerState0 == 1 && i < 10) {
         nuControl.println("PS::0::");
-        delay(500);
+        delay(125);
         i++;
       }
     }
@@ -1769,11 +1773,11 @@ void setGameDisk(int number) {
   }
   if (currentPowerState0 == 1) {
       setSysBoardPower(true);
-      setDisplayState(true);
+      setDisplayState(false);
     if (number < 2) {
       resetPSU();
       startingLEDState();
-      startLoadingScreen();
+      //startLoadingScreen();
     }
   }
   messageIcon = 129;
