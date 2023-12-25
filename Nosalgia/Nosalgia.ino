@@ -419,7 +419,7 @@ void setup() {
   server.on("/timeout/on", [=]() {
     if (inactivityTimeout == false) {
       resetInactivityTimer();
-      inactivityTimeout == true;
+      inactivityTimeout = true;
       server.send(200, "text/plain", "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
@@ -427,7 +427,7 @@ void setup() {
   });
   server.on("/timeout/off", [=]() {
      if (inactivityTimeout == true) {
-      inactivityTimeout == false;
+      inactivityTimeout = false;
       server.send(200, "text/plain", "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
