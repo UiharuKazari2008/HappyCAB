@@ -47,7 +47,7 @@ int unoccupied_time = 0;
 int last_sonar_distance = -1;
 
 int requestedPowerState0 = -1;
-const int defaultInactivityMinTimeout = 45;
+int defaultInactivityMinTimeout = 45;
 int inactivityMinTimeout = 45;
 const int shutdownDelayMinTimeout = 5;
 unsigned long previousInactivityMillis = 0; 

@@ -117,7 +117,7 @@ int boot_tone_dur[] = {
 const int irRecPin = 2;
 // Occupancy and Timer
 int requestedPowerState0 = -1;
-const int defaultInactivityMinTimeout = 45;
+int defaultInactivityMinTimeout = 45;
 int inactivityMinTimeout = 45;
 const int shutdownDelayMinTimeout = 5;
 unsigned long previousInactivityMillis = 0;
