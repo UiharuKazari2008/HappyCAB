@@ -659,6 +659,9 @@ void setup() {
     server.send(200, "text/plain", (requestedPowerState0 >= 0) ? "Warning" : ((currentPowerState0 == 1) ? getGameSelect() : "Disabled"));
   });
 
+  server.on("/timeout", [=]() {
+    server.send(200, "text/plain", ((inactivityTimeout == true) ? "ON" : "OFF"));
+  });
   server.on("/timeout/on", [=]() {
     if (inactivityTimeout == false) {
       resetInactivityTimer();
@@ -675,6 +678,15 @@ void setup() {
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
+  });
+  server.on("/timeout/set", [=]() {
+    String response = "UNCHANGED";
+    if (server.hasArg("time")) {
+      int _time = server.arg("time").toInt();
+      defaultInactivityMinTimeout = _time;
+      resetInactivityTimer();
+    }
+    server.send(200, "text/plain", response);
   });
 
   server.on("/marquee/on", [=]() {

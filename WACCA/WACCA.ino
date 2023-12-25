@@ -574,6 +574,9 @@ void setup() {
     server.send(200, "text/plain", (requestedPowerState0 >= 0) ? "Warning" : ((currentPowerState0 == 1) ? "Enabled" : "Disabled"));
   });
   
+  server.on("/timeout", [=]() {
+    server.send(200, "text/plain", ((inactivityTimeout == true) ? "ON" : "OFF"));
+  });
   server.on("/timeout/on", [=]() {
     if (inactivityTimeout == false) {
       resetInactivityTimer();
