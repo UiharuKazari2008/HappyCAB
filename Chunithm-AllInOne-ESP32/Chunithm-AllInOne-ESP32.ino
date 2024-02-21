@@ -122,7 +122,7 @@ int inactivityMinTimeout = 45;
 const int shutdownDelayMinTimeout = 5;
 unsigned long previousInactivityMillis = 0;
 unsigned long previousShutdownMillis = 0;
-bool inactivityTimeout = true;
+bool inactivityTimeout = false;
 
 const int nuPostCooldownMinTimeout = 5;
 const int allsPostCooldownMinTimeout = 10;
@@ -382,6 +382,18 @@ void setup() {
     }
     server.send(200, "text/plain", response);
   });
+ server.on("/fan/reset", [=]() {
+    String response = "OK";
+    if (currentPowerState0 == 0) {
+      setChassisFanSpeed(50);
+    } else if (currentPowerState0 == -1) {
+      setChassisFanSpeed(30);
+    } else if (currentPowerState0 == 1) {
+      setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
+    }
+    server.send(200, "text/plain", response);
+  });
+
   server.on("/fan", [=]() {
     String response = "";
     response += map(currentFanSpeed, 0, 255, 0, 100);
@@ -478,7 +490,7 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/select/game/other_1", [=]() {
+  server.on("/select/game/air", [=]() {
     if (currentGameSelected0 != 2) {
       setGameDisk(2);
       server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
@@ -486,9 +498,25 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/select/game/other_2", [=]() {
+  server.on("/select/game/star", [=]() {
     if (currentGameSelected0 != 3) {
       setGameDisk(3);
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/select/game/crystal", [=]() {
+    if (currentGameSelected0 != 4) {
+      setGameDisk(4);
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/select/game/other", [=]() {
+    if (currentGameSelected0 != 5) {
+      setGameDisk(5);
       server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
@@ -1064,9 +1092,10 @@ void remoteAccessLoop( void * pvParameters ) {
     delay(1);
   }
 }
+bool enableIr = true;
 void irRemoteLoop( void * pvParameters ) {
   for(;;) {
-    if (IrReceiver.decode()) {
+    if (enableIr && IrReceiver.decode()) {
       uint16_t command = IrReceiver.decodedIRData.command;
       uint16_t protocal = IrReceiver.decodedIRData.protocol;
       if (protocal == 19) {
@@ -1448,10 +1477,16 @@ String getGameSelect() {
       assembledOutput = "PL Base";
       break;
     case 2:
-      assembledOutput = "Other #1";
+      assembledOutput = "Air";
       break;
     case 3:
-      assembledOutput = "Other #2";
+      assembledOutput = "Star";
+      break;
+    case 4:
+      assembledOutput = "Crystal";
+      break;
+    case 5:
+      assembledOutput = "Other";
       break;
     case 10:
       assembledOutput = "Sun+";
@@ -1623,10 +1658,15 @@ void copyLEDBuffer() {
   for (int i = 0; i < NUM_LEDS_2; i++) {
     NeoPixelR.setPixelColor(i, NeoPixelR.Color(leds2[i].r, leds2[i].g, leds2[i].b));
   }
+  enableIr = false;
+  delay(1);
   if (IrReceiver.isIdle()) {
     NeoPixelL.show();
+  }
+  if (IrReceiver.isIdle()) {
     NeoPixelR.show();
   }
+  enableIr = true;
 }
 
 void handleSetLeds(String ledValues, int bankSelect, bool should_transition) {
@@ -2027,7 +2067,7 @@ void setIOPower(bool state) {
 void resetPSU() {
   Serial.println("LED_DATA::16::0::000000::");
   digitalWrite(controlRelays[0], LOW);
-  delay(2800);
+  delay(2300);
   digitalWrite(controlRelays[0], HIGH);
 }
 void resetMarqueeState() {
@@ -2097,10 +2137,16 @@ void setGameDisk(int number) {
       messageText += "PL Base (Nu)";
       break;
     case 2:
-      messageText += "Other #1 (Nu)";
+      messageText += "Air+ (Nu)";
       break;
     case 3:
-      messageText += "Other #2 (Nu)";
+      messageText += "Star+ (Nu)";
+      break;
+    case 4:
+      messageText += "Crystal+ (Nu)";
+      break;
+    case 5:
+      messageText += "Other? (Nu)";
       break;
     case 10:
       messageText += "Sun+ (ALLS)";
@@ -2179,11 +2225,15 @@ void triggerLEDUpdate() {
         break;
       case 2:
         // Star
-        req += "FFA21F FFA01E FF9F1C FF9D1B FF9B19 FF9918 FF9817 FF9615 FF9414 FF9213 FF9111 FF8F10 FF8D0E FF8B0D FF8A0C FF880A FF8609 FF8508 FF8306 FF8105 FF7F03 FF7E02 FF7C01 FF7A00 FF7900 FF7700 FF7600 FF7400 FF7300 FF7100 FF7000 FF6E00 FF6D00 FF6B00 FF6A00 FF6800 FF6700 FF6500 FF6400 FF6200 FF6100 FF5F00 FF5E00 FF5C00 FF5B00::";
+        req += "00B3FF 00AEFF 00A9FF 00A4FF 009FFF 0099FF 0094FF 008FFF 008AFF 0085FF 0080FF 007BFF 0076FF 0071FF 006BFF 0066FF 0061FF 005CFF 0057FF 0052FF 004DFF 0048FF 0043FF 0644FF 114DFF 1C55FF 285EFF 3366FF 3E6FFF 4A77FF 5580FF 6088FF 6C91FF 7799FF 82A2FF 8EAAFF 99B3FF A4BBFF B0C4FF BBCCFF C6D5FF D2DDFF DDE6FF E8EEFF F4F7FF::";
         break;
       case 3:
         // Air
-        req += "00B3FF 00AEFF 00A9FF 00A4FF 009FFF 0099FF 0094FF 008FFF 008AFF 0085FF 0080FF 007BFF 0076FF 0071FF 006BFF 0066FF 0061FF 005CFF 0057FF 0052FF 004DFF 0048FF 0043FF 0644FF 114DFF 1C55FF 285EFF 3366FF 3E6FFF 4A77FF 5580FF 6088FF 6C91FF 7799FF 82A2FF 8EAAFF 99B3FF A4BBFF B0C4FF BBCCFF C6D5FF D2DDFF DDE6FF E8EEFF F4F7FF::";
+        req += "FFA21F FFA01E FF9F1C FF9D1B FF9B19 FF9918 FF9817 FF9615 FF9414 FF9213 FF9111 FF8F10 FF8D0E FF8B0D FF8A0C FF880A FF8609 FF8508 FF8306 FF8105 FF7F03 FF7E02 FF7C01 FF7A00 FF7900 FF7700 FF7600 FF7400 FF7300 FF7100 FF7000 FF6E00 FF6D00 FF6B00 FF6A00 FF6800 FF6700 FF6500 FF6400 FF6200 FF6100 FF5F00 FF5E00 FF5C00 FF5B00::";
+        break;
+      case 5:
+        // Crystal
+        req += "0040FF 003FFF 003EFF 003DFF 003CFF 003BFF 003AFF 0039FF 0038FF 0037FF 0036FF 0035FF 0034FF 0033FF 0032FF 0031FF 0030FF 002FFF 002EFF 002DFF 002CFF 002BFF 002AFF 0329FF 0927FF 1025FF 1623FF 1C22FF 2220FF 281EFF 2F1CFF 351AFF 3B18FF 4116FF 4815FF 4E13FF 5411FF 5A0FFF 600DFF 670BFF 6D09FF 7307FF 7906FF 8004FF 8602FF::";
         break;
       case 10:
         // Sun
@@ -2517,6 +2567,47 @@ void kioskCommand() {
               timeoutMessage = (receivedMessage.substring(invertIndex + 2, timeoutIndex)).toInt();
               int typeIndex = receivedMessage.indexOf("::", timeoutIndex + 2);
               typeOfMessage = (receivedMessage.substring(timeoutIndex + 2, typeIndex)).toInt();
+            } else if (header == "LED_DATA") {
+              // LED_DATA::bank_id::brightness::time::take_own::is_stream::hex_data::
+              int bankIndex = receivedMessage.indexOf("::", headerIndex + 2);
+              int bankSelect = (receivedMessage.substring(headerIndex + 2, bankIndex)).toInt();
+              int brightIndex = receivedMessage.indexOf("::", bankIndex + 2);
+              int brightValue = (receivedMessage.substring(bankIndex + 2, brightIndex)).toInt();
+              int timeIndex = receivedMessage.indexOf("::", brightIndex + 2);
+              float timeValue = (receivedMessage.substring(brightIndex + 2, timeIndex)).toFloat();
+              bool hasTransition = (timeValue > 0);
+              int ownershipIndex = receivedMessage.indexOf("::", timeIndex + 2);
+              bool takeOwnership = ((receivedMessage.substring(timeIndex + 2, ownershipIndex)).toInt() == 1);
+              int isStreamIndex = receivedMessage.indexOf("::", ownershipIndex + 2);
+              bool isStream = ((receivedMessage.substring(ownershipIndex + 2, isStreamIndex)).toInt() == 1);
+              int dataIndex = receivedMessage.indexOf("::", isStreamIndex + 2);
+              String ledValues = receivedMessage.substring(isStreamIndex + 2, dataIndex);
+              if ((pending_release_leds == false && currentPowerState0 != 1) || takeOwnership) {
+                int brightness = 64;
+                if (brightValue != -1) {
+                  if (brightValue > 0 && brightValue <= 255) {
+                    if (hasTransition) {
+                      targetBrightness = brightValue;
+                    } else {
+                      NeoPixelL.setBrightness(brightValue);
+                      NeoPixelR.setBrightness(brightValue);
+                    }
+                  }
+                }
+                if (takeOwnership) {
+                  setLEDControl((server.arg("ledValues").c_str() == "true"));
+                }
+                if (hasTransition) {
+                  numSteps = timeValue * 33.2;
+                  transition_interval = (unsigned long)(1000.0 * timeValue / (float)numSteps);
+                }
+                
+                if (isStream) {
+                  handleSetLeds(ledValues, bankSelect, hasTransition);
+                } else {
+                  handleSetLedColor(ledValues, bankSelect, hasTransition);
+                }
+              }
             } else if (header == "SYS_STATE") {
               int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);

@@ -1,8 +1,10 @@
 bool system_power_state = 0;
 int selected_game_disk = 0;
 
-const int num_of_disks = 4;
-const int game_disks[4] = { 2, 3, 4, 5 };
+#define num_of_disks 6
+const int game_disks[num_of_disks] = { 2, 3, 4, 5, 7, 8 };
+const int off_disk_state[num_of_disks] = { LOW, LOW, LOW, LOW, HIGH, HIGH};
+const int on_disk_state[num_of_disks] = { HIGH, HIGH, HIGH, HIGH, LOW, LOW};
 const int power_en_pin = 6;
 
 void setup() {
@@ -13,7 +15,7 @@ void setup() {
   digitalWrite(power_en_pin, LOW);
   for (int i=0; i < num_of_disks; i++) {
     pinMode(game_disks[i], OUTPUT);
-    digitalWrite(game_disks[i], LOW);
+    digitalWrite(game_disks[i], off_disk_state[i]);
   }
   Serial.println("I::R");
 }
@@ -119,7 +121,7 @@ void handleCRMessage(String inputString) {
 String setPowerOn() {
   if (selected_game_disk < 10) {
     if (system_power_state != 1) {
-      digitalWrite(game_disks[selected_game_disk], HIGH);
+      digitalWrite(game_disks[selected_game_disk], on_disk_state[selected_game_disk]);
       digitalWrite(power_en_pin, HIGH);
       system_power_state = 1;
       blinkNum = 0;
@@ -130,7 +132,7 @@ String setPowerOn() {
   } else {
       digitalWrite(power_en_pin, LOW);
       for (int i=0; i < num_of_disks; i++) {
-        digitalWrite(game_disks[i], LOW);
+        digitalWrite(game_disks[i], off_disk_state[i]);
       }
       system_power_state = 0;
       return "INHIBIT";
@@ -141,7 +143,7 @@ String setPowerOff() {
     digitalWrite(power_en_pin, LOW);
     delay(450);
     for (int i=0; i < num_of_disks; i++) {
-      digitalWrite(game_disks[i], LOW);
+      digitalWrite(game_disks[i], off_disk_state[i]);
     }
     system_power_state = 0;
     return "OK";

@@ -87,3 +87,34 @@
 #define NOTE_CS8 4435
 #define NOTE_D8  4699
 #define NOTE_DS8 4978
+
+int booting_tone[] = {
+  NOTE_C5, NOTE_E5, NOTE_D5, NOTE_C6, NOTE_E6
+};
+int booting_tone_dur[] = {
+  8, 8, 8, 4, 2
+};
+int shutting_down_tone[] = {
+  NOTE_D5, NOTE_A4, NOTE_D5, NOTE_D4
+};
+int shutting_down_dur[] = {
+  8, 8, 4, 2
+};
+int warning_tone[] = {
+  NOTE_A5, NOTE_G5, NOTE_F5
+};
+int warning_tone_dur[] = {
+  8, 8, 8
+};
+int warning_tone_long[] = {
+  NOTE_A5, NOTE_F5
+};
+int warning_tone_long_dur[] = {
+  4, 4
+};
+int boot_tone[] = {
+  NOTE_F5, NOTE_G5, NOTE_A5, NOTE_B5
+};
+int boot_tone_dur[] = {
+  8, 8, 8, 4
+};
