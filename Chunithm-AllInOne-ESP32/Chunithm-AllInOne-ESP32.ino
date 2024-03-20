@@ -382,7 +382,7 @@ void setup() {
     }
     server.send(200, "text/plain", response);
   });
- server.on("/fan/reset", [=]() {
+  server.on("/fan/reset", [=]() {
     String response = "OK";
     if (currentPowerState0 == 0) {
       setChassisFanSpeed(50);

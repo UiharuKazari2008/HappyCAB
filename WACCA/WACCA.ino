@@ -1,5 +1,6 @@
 #include <WiFi.h>
 #include <WebServer.h>
+#include <HTTPClient.h>
 #include <EEPROM.h>
 #include <U8g2lib.h>
 #include <Adafruit_DS3502.h>
@@ -149,6 +150,8 @@ TaskHandle_t Task6;
 TaskHandle_t Task7;
 TaskHandle_t Task8;
 TaskHandle_t Task9;
+
+const char *shutdown_url = "http://192.168.100.32:9052/shutdown";
 
 void checkWiFiConnection() {
   if (WiFi.status() != WL_CONNECTED) {
@@ -365,6 +368,28 @@ void setup() {
     }
     if (fanSpeed > -1) {
       setMainFanSpeed(fanSpeed);
+    }
+    server.send(200, "text/plain", response);
+  });
+  server.on("/fan/1/reset", [=]() {
+    String response = "OK";
+    if (currentPowerState0 == 0) {
+      setChassisFanSpeed(35);
+    } else if (currentPowerState0 == -1) {
+      setChassisFanSpeed(0);
+    } else if (currentPowerState0 == 1) {
+      setChassisFanSpeed(75);
+    }
+    server.send(200, "text/plain", response);
+  });
+  server.on("/fan/2/reset", [=]() {
+    String response = "OK";
+    if (currentPowerState0 == 0) {
+      setMainFanSpeed((enhancedStandby == true) ? 100 : 25);
+    } else if (currentPowerState0 == -1) {
+      setMainFanSpeed((enhancedStandby == true) ? 75 : 15);
+    } else if (currentPowerState0 == 1) {
+      setMainFanSpeed(100);
     }
     server.send(200, "text/plain", response);
   });
@@ -1596,6 +1621,9 @@ void setGameOn() {
     setMainFanSpeed(100);
     startingLEDState();
     setMarqueeState(true, false);
+    if (enhancedStandby == true) {
+      exitEnhancedStandby();
+    }
     if (requestedGameSelected0 != currentGameSelected0) {
       setGameDisk(requestedGameSelected0);
     }
@@ -1706,6 +1734,7 @@ void enterEnhancedStandby(bool state) {
     }
   } else if (state == false) {
     if (currentNuPowerState0 == 1) {
+      exitEnhancedStandby();
       int i = 0;
       nuResponse = "";
       while (currentNuPowerState0 == 1 && i < 10) {
@@ -1717,6 +1746,22 @@ void enterEnhancedStandby(bool state) {
     digitalWrite(relayPins[3], LOW);
     digitalWrite(relayPins[4], LOW);
   }
+}
+void exitEnhancedStandby() {
+  tone(buzzer_pin, NOTE_D4);
+  HTTPClient http;
+  String url = String(shutdown_url);
+  Serial.println("Sending GET request to: " + url);
+  http.begin(url);
+  http.setConnectTimeout(5000);
+  http.setTimeout(120000); // Wait 120 Sec for complete Shutdown
+  int httpCode = http.GET();
+  String payload = http.getString();
+  Serial.println(payload);
+  http.end();
+  Serial.println("HTTP Response code: " + String(httpCode));
+  noTone(buzzer_pin);
+  delay(5);
 }
 void setSysBoardPower(bool state) {
   nuResponse = "";
