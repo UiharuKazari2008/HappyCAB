@@ -945,7 +945,7 @@ void loop() {
     animation_state = -1;
     animation_mode = -1;
     currentStep = 0;
-    kioskModeRequest("GameRunning");
+    kioskModeRequest((currentGameSelected0 >= 10) ? "GameRunningALLS" : "GameRunning");
     triggerLEDUpdate();
     if (currentGameSelected0 > 19) {
       pdaLEDState();
