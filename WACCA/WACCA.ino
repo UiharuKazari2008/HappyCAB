@@ -95,8 +95,8 @@ int requestedPowerState0 = -1;
 int defaultInactivityMinTimeout = 45;
 int inactivityMinTimeout = 45;
 const int shutdownDelayMinTimeout = 5;
-unsigned long previousInactivityMillis = 0; 
-unsigned long previousShutdownMillis = 0; 
+unsigned long previousInactivityMillis = 0;
+unsigned long previousShutdownMillis = 0;
 bool inactivityTimeout = true;
 
 // DISPLAY_MESSAGE::BIG::icon::text::isJP/t::255::invert/t::timeout/20
@@ -108,7 +108,7 @@ int brightMessage = 1;
 bool invertMessage = false;
 int timeoutMessage = 0;
 
-unsigned long previousMillis = 0; 
+unsigned long previousMillis = 0;
 uint8_t numSteps = 120; // Number of steps in the transition
 uint8_t currentStep = 0;
 bool pending_release_leds = false;
@@ -119,7 +119,7 @@ int animation_mode = -1;
 int animation_state = -1;
 
 bool ready_to_boot = false;
-String inputString = ""; 
+String inputString = "";
 String attachedSoftwareCU = "Unknown";
 int currentVolume = 0;
 bool muteVolume = false;
@@ -182,8 +182,8 @@ void checkWiFiConnection() {
 void setup() {
   pinMode(displayMainSelect, OUTPUT);
   digitalWrite(displayMainSelect, HIGH);
-  inputString.reserve(200); 
-  attachedSoftwareCU.reserve(200); 
+  inputString.reserve(200);
+  attachedSoftwareCU.reserve(200);
   Serial.begin(115200);
   u8g2.begin();
   u8g2.enableUTF8Print();
@@ -406,21 +406,21 @@ void setup() {
 
   server.on("/display/pc", [=]() {
     setDisplayState(true);
-    server.send(200, "text/plain", (displayMainSelect == true) ? "UNCHANGED" : "OK");
+    server.send(200, "text/plain", (displayMainState == true) ? "UNCHANGED" : "OK");
   });
   server.on("/display/game", [=]() {
     setDisplayState(false);
-    server.send(200, "text/plain", (displayMainSelect == false) ? "UNCHANGED" : "OK");
+    server.send(200, "text/plain", (displayMainState == false) ? "UNCHANGED" : "OK");
   });
   server.on("/display/switch", [=]() {
     String assembledOutput = "";
     pushDisplaySwitch();
-    assembledOutput += ((displayMainSelect == false) ? "PC" : "AUX");
+    assembledOutput += ((displayMainState == false) ? "PC" : "GAME");
     server.send(200, "text/plain", assembledOutput);
   });
   server.on("/display", [=]() {
     String assembledOutput = "";
-    assembledOutput += ((displayMainSelect == true) ? "PC" : "GAME");
+    assembledOutput += ((displayMainState == true) ? "PC" : "GAME");
     server.send(200, "text/plain", assembledOutput);
   });
 
@@ -450,7 +450,7 @@ void setup() {
     String const val = getGameSelect();
     server.send(200, "text/plain", val);
   });
-  
+
   server.on("/power/off", [=]() {
     server.send(200, "text/plain", (currentPowerState0 == -1) ? "UNCHNAGED" : "OK");
     setMasterPowerOff();
@@ -598,7 +598,7 @@ void setup() {
   server.on("/game_power", [=]() {
     server.send(200, "text/plain", (requestedPowerState0 >= 0) ? "Warning" : ((currentPowerState0 == 1) ? "Enabled" : "Disabled"));
   });
-  
+
   server.on("/timeout", [=]() {
     server.send(200, "text/plain", ((inactivityTimeout == true) ? "ON" : "OFF"));
   });
@@ -648,7 +648,7 @@ void setup() {
   server.on("/marquee", [=]() {
     server.send(200, "text/plain", ((currentMarqueeState == 0) ? (currentPowerState0 == 1) ? "Enabled" : "Disabled" : "Enabled"));
   });
-  
+
   server.on("/setLED", [=]() {
     String ledValues = server.arg("ledValues");  // Get the LED values from the URL parameter
     server.sendHeader("Access-Control-Allow-Origin", "*");
@@ -679,7 +679,7 @@ void setup() {
         transition_interval = (unsigned long)(1000.0 * _transition_time / (float)numSteps);
       }
       if (server.hasArg("bankSelect")) {
-        bankSelect = server.arg("bankSelect").toInt(); 
+        bankSelect = server.arg("bankSelect").toInt();
       }
 
       handleSetLeds(ledValues, bankSelect, (server.hasArg("transition_time")));
@@ -712,7 +712,7 @@ void setup() {
         }
       }
       if (server.hasArg("bankSelect")) {
-        bankSelect = server.arg("bankSelect").toInt(); 
+        bankSelect = server.arg("bankSelect").toInt();
       }
 
       handleSetLedColor(ledValue, bankSelect, (server.hasArg("transition_time")));
@@ -738,13 +738,13 @@ void setup() {
     server.sendHeader("Access-Control-Max-Age", "10000");
     server.send(200, "text/plain", "LED Reset to standby");
     standbyLEDState();
-    
+
   });
 
   server.begin();
 
   displayedSec = esp_timer_get_time() / 1000000;
-  
+
   delay(250);
   //bootScreen("SYS_PWR_ON");
   //setMasterPowerOn();
@@ -939,7 +939,7 @@ void remoteAccessLoop( void * pvParameters ) {
   }
 }
 void melodyPlayer( void * pvParameters ) {
-  for(;;) { 
+  for(;;) {
     // Play Melody Sheets
     if (startMelody == true) {
       if (millis() - previousMelodyMillis >= pauseBetweenNotes) {
@@ -1556,7 +1556,7 @@ void setMasterPowerOn() {
     animation_state = -1;
     animation_mode = -1;
     currentStep = 0;
-    
+
     messageIcon = 223;
     messageText = (enhancedStandby == true) ? "E. Standby Mode" : "Standby Mode";
     isJpnMessage = false;
@@ -1622,6 +1622,7 @@ void setGameOn() {
     startingLEDState();
     setMarqueeState(true, false);
     if (enhancedStandby == true) {
+      delay(15000);
       exitEnhancedStandby();
     }
     if (requestedGameSelected0 != currentGameSelected0) {
@@ -1629,15 +1630,15 @@ void setGameOn() {
     }
     setDisplayState(true);
     setSysBoardPower(true);
-    
+
     melodyPlay = 0;
     loopMelody = -1;
     currentNote = 0;
     previousMelodyMillis = 0;
     startMelody = true;
-    
+
     pending_release_display = true;
-    
+
     messageIcon = 96;
     messageText = "Power On";
     isJpnMessage = false;
@@ -1676,13 +1677,13 @@ void setGameOff() {
     } else {
       setSysBoardPower(false);
     }
-    
+
     loopMelody = -1;
     melodyPlay = 1;
     currentNote = 0;
     previousMelodyMillis = 0;
     startMelody = true;
-    
+
     messageIcon = 223;
     messageText = "Standby Mode";
     isJpnMessage = false;
@@ -1748,7 +1749,7 @@ void enterEnhancedStandby(bool state) {
   }
 }
 void exitEnhancedStandby() {
-  tone(buzzer_pin, NOTE_D4);
+  tone(buzzer_pin, NOTE_C5);
   HTTPClient http;
   String url = String(shutdown_url);
   Serial.println("Sending GET request to: " + url);

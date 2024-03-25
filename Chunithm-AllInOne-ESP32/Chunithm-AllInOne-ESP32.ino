@@ -402,21 +402,21 @@ void setup() {
 
   server.on("/display/pc", [=]() {
     setDisplayState(true);
-    server.send(200, "text/plain", (displayMainSelect == true) ? "UNCHANGED" : "OK");
+    server.send(200, "text/plain", (displayMainState == true) ? "UNCHANGED" : "OK");
   });
   server.on("/display/game", [=]() {
     setDisplayState(false);
-    server.send(200, "text/plain", (displayMainSelect == false) ? "UNCHANGED" : "OK");
+    server.send(200, "text/plain", (displayMainState == false) ? "UNCHANGED" : "OK");
   });
   server.on("/display/switch", [=]() {
     String assembledOutput = "";
     pushDisplaySwitch();
-    assembledOutput += ((displayMainSelect == false) ? "PC" : "AUX");
+    assembledOutput += ((displayMainState == false) ? "PC" : "AUX");
     server.send(200, "text/plain", assembledOutput);
   });
   server.on("/display", [=]() {
     String assembledOutput = "";
-    assembledOutput += ((displayMainSelect == true) ? "PC" : "GAME");
+    assembledOutput += ((displayMainState == true) ? "PC" : "GAME");
     server.send(200, "text/plain", assembledOutput);
   });
 
@@ -429,7 +429,6 @@ void setup() {
             if (o == 1 && currentPowerState0 == 1) {
               nuControl.println("PS::128");
               if (pending_release_display == false) {
-                setDisplayState(true);
                 startLoadingScreen();
               }
             }
@@ -538,9 +537,25 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
+  server.on("/select/game/sun_extra", [=]() {
+    if (currentGameSelected0 != 12) {
+      setGameDisk(12);
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
   server.on("/select/game/new", [=]() {
     if (currentGameSelected0 != 11) {
       setGameDisk(11);
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/select/game/lumi", [=]() {
+    if (currentGameSelected0 != 13) {
+      setGameDisk(13);
       server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
@@ -598,6 +613,7 @@ void setup() {
 
   server.on("/test/nu/off", [=]() {
     nuResponse = "";
+    digitalWrite(controlRelays[1], LOW);
     while (currentNuPowerState0 == 1) {
       nuControl.println("PS::0");
       delay(100);
@@ -606,6 +622,7 @@ void setup() {
   });
   server.on("/test/nu/on", [=]() {
     nuResponse = "";
+    digitalWrite(controlRelays[1], HIGH);
     while (currentNuPowerState0 == 0) {
       nuControl.println("PS::1");
       delay(100);
@@ -765,7 +782,7 @@ void setup() {
         req += "::";
         req += ledValues;
         req += "::";
-        
+
         Serial.println(req);
       } else {
         int brightness = 64;
@@ -1491,8 +1508,14 @@ String getGameSelect() {
     case 10:
       assembledOutput = "Sun+";
       break;
+    case 12:
+      assembledOutput = "Sun+E";
+      break;
     case 11:
       assembledOutput = "New+";
+      break;
+    case 13:
+      assembledOutput = "Lumi";
       break;
     case 20:
       assembledOutput = "PDA:FT";
@@ -1603,6 +1626,7 @@ void startLoadingScreen() {
   if (currentGameSelected0 < 20) {
     kioskModeRequest((currentGameSelected0 >= 10) ? "StartALLSGame" : "StartGame");
   }
+  setDisplayState(true);
 }
 
 void setUpperLED(String ledValues, bool should_transition) {
@@ -1946,14 +1970,14 @@ void setGameOn() {
     inactivityMinTimeout = defaultInactivityMinTimeout + 5;
     previousInactivityMillis = millis();
     setTouchControl((currentGameSelected0 < 10));
-    setDisplayState(true);
-    setSysBoardPower(true);
-    resetPSU();
     if (currentGameSelected0 < 20) {
       startLoadingScreen();
     } else {
       pending_alls_good_response = true;
+      setDisplayState(true);
     }
+    setSysBoardPower(true);
+    resetPSU();
     startingLEDState();
     setMarqueeState(true, false);
     setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
@@ -2067,7 +2091,7 @@ void setIOPower(bool state) {
 void resetPSU() {
   Serial.println("LED_DATA::16::0::000000::");
   digitalWrite(controlRelays[0], LOW);
-  delay(2300);
+  delay(2500);
   digitalWrite(controlRelays[0], HIGH);
 }
 void resetMarqueeState() {
@@ -2099,9 +2123,8 @@ void setGameDisk(int number) {
       setSysBoardPower(true);
       resetPSU();
       setTouchControl(true);
-      setDisplayState(false);
       startingLEDState();
-      //startLoadingScreen();
+      startLoadingScreen();
     }
     for (int i = 0; i < 3; i++) {
       cardReaderSerial.println("BLOCKER_CLOSE::NO_DATA");
@@ -2122,9 +2145,8 @@ void setGameDisk(int number) {
       setSysBoardPower(true);
       resetPSU();
       setTouchControl(false);
-      setDisplayState(true);
       startingLEDState();
-      //startLoadingScreen();
+      startLoadingScreen();
     }
   }
   messageIcon = 129;
@@ -2151,8 +2173,14 @@ void setGameDisk(int number) {
     case 10:
       messageText += "Sun+ (ALLS)";
       break;
+    case 12:
+      messageText += "Sun+E (ALLS)";
+      break;
     case 11:
       messageText += "New+ (ALLS)";
+      break;
+    case 13:
+      messageText += "Lumi (ALLS)";
       break;
     case 20:
       messageText += "DIVA: FT (ALLS)";
@@ -2181,7 +2209,6 @@ void setEthernetState(int ethNum, int ethVal) {
         delay(100);
       }
       if (pending_release_display == false) {
-        setDisplayState(true);
         startLoadingScreen();
       }
     }
@@ -2236,7 +2263,12 @@ void triggerLEDUpdate() {
         req += "0040FF 003FFF 003EFF 003DFF 003CFF 003BFF 003AFF 0039FF 0038FF 0037FF 0036FF 0035FF 0034FF 0033FF 0032FF 0031FF 0030FF 002FFF 002EFF 002DFF 002CFF 002BFF 002AFF 0329FF 0927FF 1025FF 1623FF 1C22FF 2220FF 281EFF 2F1CFF 351AFF 3B18FF 4116FF 4815FF 4E13FF 5411FF 5A0FFF 600DFF 670BFF 6D09FF 7307FF 7906FF 8004FF 8602FF::";
         break;
       case 10:
+      case 12:
         // Sun
+        req += "48CAFF::";
+        break;
+      case 13:
+        // Lumi TODO GET JVS Colors
         req += "48CAFF::";
         break;
       case 11:
@@ -2601,7 +2633,7 @@ void kioskCommand() {
                   numSteps = timeValue * 33.2;
                   transition_interval = (unsigned long)(1000.0 * timeValue / (float)numSteps);
                 }
-                
+
                 if (isStream) {
                   handleSetLeds(ledValues, bankSelect, hasTransition);
                 } else {
