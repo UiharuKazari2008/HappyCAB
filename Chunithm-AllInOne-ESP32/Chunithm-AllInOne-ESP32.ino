@@ -14,7 +14,8 @@
 
 const char* ssid = "Radio Noise AX";
 const char* password = "Radio Noise AX";
-const char* KLM_MACAddress = "3C:52:82:58:B4:71"; // Lifecycle Manager PC Mac Address
+// Lifecycle Manager PC Mac Address
+const char* KLM_MACAddress = "3C:52:82:58:B4:71";
 WebServer server(80);
 WiFiUDP UDP;
 WakeOnLan WOL(UDP);
@@ -125,6 +126,7 @@ int requestedPowerState0 = -1;
 int defaultInactivityMinTimeout = 45;
 int inactivityMinTimeout = 45;
 const int shutdownDelayMinTimeout = 5;
+const int powerOffDelayMinTimeout = 3;
 unsigned long previousInactivityMillis = 0;
 unsigned long previousShutdownMillis = 0;
 bool inactivityTimeout = false;
@@ -152,6 +154,8 @@ int minimumVolume = 20;
 int maximumVolume = 127;
 bool inhibitNuState = false;
 bool ultraPowerSaving = false;
+int shutdownPCTimer = 0;
+unsigned long powerInactivityMillis = 0;
 int currentGameSelected0 = -1;
 int currentNuPowerState0 = -1;
 int currentALLSState0 = -1;
@@ -378,29 +382,37 @@ void setup() {
   });
   server.on("/fan/set", [=]() {
     String response = "UNCHANGED";
-    int fanSpeed = -1;
-    if (server.hasArg("percent")) {
-      int _fanVal = server.arg("percent").toInt();
-      if (_fanVal > 0 && _fanVal <= 100) {
-        fanSpeed = _fanVal;
-        response = "SET TO ";
-        response += _fanVal;
-        response += "%";
+    if (activeCooldownTimer >= 0) {
+      response = "INHIBIT: COOLING DOWN"
+    } else {
+      int fanSpeed = -1;
+      if (server.hasArg("percent")) {
+        int _fanVal = server.arg("percent").toInt();
+        if (_fanVal > 0 && _fanVal <= 100) {
+          fanSpeed = _fanVal;
+          response = "SET TO ";
+          response += _fanVal;
+          response += "%";
+        }
       }
-    }
-    if (fanSpeed > -1) {
-      setChassisFanSpeed(fanSpeed);
+      if (fanSpeed > -1) {
+        setChassisFanSpeed(fanSpeed);
+      }
     }
     server.send(200, "text/plain", response);
   });
   server.on("/fan/reset", [=]() {
     String response = "OK";
-    if (currentPowerState0 == 0) {
-      setChassisFanSpeed(50);
-    } else if (currentPowerState0 == -1) {
-      setChassisFanSpeed(30);
-    } else if (currentPowerState0 == 1) {
-      setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
+    if (activeCooldownTimer >= 0) {
+      response = "INHIBIT: COOLING DOWN"
+    } else {
+      if (currentPowerState0 == 0) {
+        setChassisFanSpeed(50);
+      } else if (currentPowerState0 == -1) {
+        setChassisFanSpeed(30);
+      } else if (currentPowerState0 == 1) {
+        setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
+      }
     }
     server.send(200, "text/plain", response);
   });
@@ -743,6 +755,27 @@ void setup() {
       resetInactivityTimer();
     }
     server.send(200, "text/plain", response);
+  });
+
+  server.on("/power_save", [=]() {
+    server.send(200, "text/plain", ((ultraPowerSaving == true) ? "ON" : "OFF"));
+  });
+  server.on("/power_save/on", [=]() {
+    if (ultraPowerSaving == false) {
+      resetInactivityTimer();
+      ultraPowerSaving = true;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/power_save/off", [=]() {
+     if (ultraPowerSaving == true) {
+      ultraPowerSaving = false;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
   });
 
   server.on("/marquee/on", [=]() {
@@ -1326,7 +1359,28 @@ void nuControlRXLoop( void * pvParameters ) {
     }
   }
 }
-
+void powerManagerLoop( void * pvParameters ) {
+  for(;;) {
+    if (ultraPowerSaving === true && currentPowerState0 === -1 && powerInactivityMillis !== -1 && shutdownPCTimer === 0) {
+      unsigned long currentMillis = millis();
+      if ((currentMillis - powerInactivityMillis) >= (powerOffDelayMinTimeout * 60000)) {
+        while (shutdownPCTimer !== 2) {
+          Serial.println("");
+          Serial.println("DLPM::POWER_OFF");
+          Serial.println("");
+          delay(10000);
+        }
+        delay(10000);
+      } else {
+        delay(60000);
+      }
+    } else if (ultraPowerSaving === false && currentPowerState0 === -1 && shutdownPCTimer !== 0) {
+      powerOnManager();
+    } else {
+      delay(60000);
+    }
+  }
+}
 
 void runtime() {
   int time_in_sec = esp_timer_get_time() / 1000000;
@@ -1887,6 +1941,9 @@ void handleCRMessage(String inputString) {
 }
 
 void setMasterPowerOn() {
+  if (currentPowerState0 == -2) {
+    powerOnManager();
+  }
   if (currentPowerState0 == -1) {
     setIOPower(true);
     delay(250);
@@ -1922,6 +1979,7 @@ void setMasterPowerOn() {
     typeOfMessage = 1;
     triggerLEDUpdate();
   }
+  powerInactivityMillis = -1;
   requestedPowerState0 = -1;
 }
 void setMasterPowerOff() {
@@ -1962,11 +2020,15 @@ void setMasterPowerOff() {
     timeoutMessage = 10;
     typeOfMessage = 1;
   }
+  powerInactivityMillis = millis();
   requestedPowerState0 = -1;
   currentPowerState0 = -1;
   triggerLEDUpdate();
 }
 void setGameOn() {
+  if (currentPowerState0 == -2) {
+    powerOnManager();
+  }
   if (currentPowerState0 == -1) {
     setIOPower(true);
     delay(1000);
@@ -2006,6 +2068,7 @@ void setGameOn() {
   if (requestedPowerState0 != -1) {
     resetState();
   }
+  powerInactivityMillis = -1;
   requestedPowerState0 = -1;
   currentPowerState0 = 1;
   triggerLEDUpdate();
@@ -2054,6 +2117,7 @@ void setGameOff() {
     timeoutMessage = 10;
     typeOfMessage = 1;
   }
+  powerInactivityMillis = -1;
   currentPowerState0 = 0;
   requestedPowerState0 = -1;
   triggerLEDUpdate();
@@ -2348,6 +2412,20 @@ void resetInactivityTimer() {
   inactivityMinTimeout = defaultInactivityMinTimeout + 20;
   resetState();
 }
+void powerOnManager() {
+  if (ultraPowerSaving === true && currentPowerState0 === -2 && shutdownPCTimer !== 0) {
+    powerInactivityMillis = -1;
+    tone(buzzer_pin, NOTE_CS3, 1000 / 8);
+    int tryCount = 0;
+    while (shutdownPCTimer !== 0) {
+      WOL.sendMagicPacket(KLM_MACAddress);
+      delay(1000);
+      tone(buzzer_pin, (tryCount % 2 == 0) ? NOTE_GS3 : NOTE_CS3, 1000 / 8);
+      tryCount++;
+    }
+    noTone(buzzer_pin);
+  }
+}
 
 void pushEthSwitch(int ethNum) {
   digitalWrite(ethButtons[ethNum], HIGH);
@@ -2590,8 +2668,25 @@ void kioskCommand() {
                 ds3502.setWiper((muteVolume == true) ? minimumVolume : currentVolume);
                 displayVolumeMessage();
               }
+            } else if (header == "DLPM") {
+              int valueIndex = receivedMessage.indexOf("::", headerIndex + 2);
+              String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
+              if (valueString == "CANCEL") {
+                shutdownPCTimer = 0;
+              } else if (valueString == "REQ_POWER_OFF") {
+                shutdownPCTimer = 2;
+              } else if (valueString == "REQ_REBOOT") {
+                shutdownPCTimer = 1;
+              }
             } else if (header == "PING") {
               Serial.println("R::PONG");
+              if (shutdownPCTimer !== 0) {
+                shutdownPCTimer = 0;
+                if (currentPowerState0 === -2) {
+                  currentPowerState0 === -1;
+                }
+                powerInactivityMillis = -1;
+              }
             } else if (header == "ALLS_OK") {
               allsOK = true;
             } else if (header == "ALLS_NG") {
