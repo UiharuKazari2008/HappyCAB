@@ -760,10 +760,25 @@ void setup() {
   server.on("/power_save", [=]() {
     server.send(200, "text/plain", ((ultraPowerSaving == true) ? "ON" : "OFF"));
   });
+  server.on("/power_save/force", [=]() {
+    if (ultraPowerSaving == false) {
+      resetInactivityTimer();
+      ultraPowerSaving = true;
+      if (currentPowerState0 === -1) {
+        powerInactivityMillis = 0;
+      }
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
   server.on("/power_save/on", [=]() {
     if (ultraPowerSaving == false) {
       resetInactivityTimer();
       ultraPowerSaving = true;
+      if (currentPowerState0 === -1) {
+        powerInactivityMillis = millis();
+      }
       server.send(200, "text/plain", "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
