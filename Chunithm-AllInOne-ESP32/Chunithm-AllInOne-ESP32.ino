@@ -761,6 +761,9 @@ void setup() {
   server.on("/power_save", [=]() {
     server.send(200, "text/plain", ((ultraPowerSaving == true) ? "ON" : "OFF"));
   });
+  server.on("/power_save/dlpm_state", [=]() {
+    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? "POWER ON" : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 1) ? "POWER OFF" : "????"));
+  });
   server.on("/power_save/force", [=]() {
     if (ultraPowerSaving == false) {
       resetInactivityTimer();
@@ -1129,7 +1132,7 @@ void loop() {
     if (activeCooldownTimer == 0 && currentMillis - previousCooldownMillis >= (nuPostCooldownMinTimeout * 60000)) {
       if (currentPowerState0 == 0) {
         setChassisFanSpeed(50);
-      } else if (currentPowerState0 == -1) {
+      } else if (currentPowerState0 <= -1) {
         setChassisFanSpeed(30);
       }
       activeCooldownTimer = -1;
@@ -1137,7 +1140,7 @@ void loop() {
     if (activeCooldownTimer == 1 && currentMillis - previousCooldownMillis >= (allsPostCooldownMinTimeout * 60000)) {
       if (currentPowerState0 == 0) {
         setChassisFanSpeed(50);
-      } else if (currentPowerState0 == -1) {
+      } else if (currentPowerState0 <= -1) {
         setChassisFanSpeed(30);
       }
       activeCooldownTimer = -1;
@@ -1220,7 +1223,7 @@ void irRemoteLoop( void * pvParameters ) {
               setGameOff();
             } else if (currentPowerState0 == 0) {
               setGameOn();
-            } else if (currentPowerState0 == -1) {
+            } else if (currentPowerState0 <= -1) {
               setMasterPowerOn();
             }
             delay(1000);
@@ -1304,7 +1307,7 @@ void cardReaderTXLoop( void * pvParameters ) {
       value = 0;
     } else if (currentPowerState0 == 0) {
       value = 1;
-    } else if (currentPowerState0 == 1 && requestedPowerState0 == -1) {
+    } else if (currentPowerState0 == 1 && requestedPowerState0 <= -1) {
       value = 2;
     }
     cardReaderSerial.println("POWER_SWITCH::" + String(value));
@@ -1412,12 +1415,13 @@ void runtime() {
   int time_in_sec = esp_timer_get_time() / 1000000;
   int current_time = (time_in_sec - displayedSec) / 2;
 
-  if (displayState != 1 && currentPowerState0 == -1) {
+  if (displayState != 1 && currentPowerState0 <= -1) {
       const String power = getPowerAuth();
       displayIconDualMessage(1, false, false, (power == "Active") ? 491 : 490, "System Power", power);
       displayState = 1;
-  } else if (currentPowerState0 == -1) {
+  } else if (currentPowerState0 <= -1) {
     delay(500);
+    displayState = 0;
   } else if (currentPowerState0 != -1) {
     if (displayState != 0 && current_time < 1) {
       displayIconMessage(1, true, true, 250, "チュウニズム");
@@ -1619,7 +1623,7 @@ String getGameSelect() {
 }
 String getPowerAuth() {
   String assembledOutput = "";
-  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -1) ? "Power Off" : (currentPowerState0 == 0) ? "Standby" : (coinEnable == false) ? "Startup" : "Active"));
+  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -2) ? "Power Off" : (currentPowerState0 == -1) ? (ultraPowerSaving) ? "Power Off (Active)" : "Power Off" : (currentPowerState0 == 0) ? "Standby" : (coinEnable == false) ? "Startup" : "Active"));
   return assembledOutput;
 }
 void displayVolumeMessage() {
@@ -2199,7 +2203,7 @@ void resetMarqueeState() {
   digitalWrite(controlRelays[2], (currentMarqueeState == 1) ? HIGH : LOW);
 }
 void setMarqueeState(bool state, bool save) {
-  if (currentPowerState0 != -1) {
+  if (currentPowerState0 <= -1) {
     digitalWrite(controlRelays[2], (state == true) ? HIGH : LOW);
   }
   if (save == true) {
@@ -2439,7 +2443,7 @@ void resetInactivityTimer() {
   resetState();
 }
 void powerOnManager() {
-  if (ultraPowerSaving == true && currentPowerState0 == -2 && shutdownPCTimer != 0) {
+  if (ultraPowerSaving == true && shutdownPCTimer != 0) {
     powerInactivityMillis = -1;
     tone(buzzer_pin, NOTE_CS3, 1000 / 8);
     int tryCount = 0;
