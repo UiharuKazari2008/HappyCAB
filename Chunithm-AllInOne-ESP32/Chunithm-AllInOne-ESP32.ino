@@ -761,8 +761,11 @@ void setup() {
   server.on("/power_save", [=]() {
     server.send(200, "text/plain", ((ultraPowerSaving == true) ? "ON" : "OFF"));
   });
-  server.on("/power_save/dlpm_state", [=]() {
-    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? "POWER ON" : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 1) ? "POWER OFF" : "????"));
+  server.on("/power_save/dlpm/state", [=]() {
+    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? "POWER ON" : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
+  });
+  server.on("/power_save/dlpm/timeout", [=]() {
+    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? String((currentMillis - powerInactivityMillis) / 60000) : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 1) ? "POWER OFF" : "????"));
   });
   server.on("/power_save/force", [=]() {
     if (ultraPowerSaving == false) {
@@ -2448,11 +2451,18 @@ void powerOnManager() {
     tone(buzzer_pin, NOTE_CS3, 1000 / 8);
     int tryCount = 0;
     while (shutdownPCTimer != 0) {
+      Serial.println("");
+      Serial.println("PING");
+      Serial.println("");
       WOL.sendMagicPacket(KLM_MACAddress);
       delay(1000);
       tone(buzzer_pin, (tryCount % 2 == 0) ? NOTE_GS3 : NOTE_CS3, 1000 / 8);
       tryCount++;
     }
+    delay(500);
+    Serial.println("");
+    Serial.println("PROBE::SEARCH");
+    Serial.println("");
     noTone(buzzer_pin);
   }
 }
