@@ -178,6 +178,7 @@ TaskHandle_t Task6;
 TaskHandle_t Task7;
 TaskHandle_t Task8;
 TaskHandle_t Task9;
+TaskHandle_t Task10;
 
 String remoteLEDTrigger = "http://192.168.100.62:3001/button-streamdeck2?event=long-press";
 
@@ -268,6 +269,10 @@ void setup() {
   }
   nuResponse = "";
 
+  bootScreen("NETWORK");
+  checkWiFiConnection();
+  tone(buzzer_pin, NOTE_C6);
+
   bootScreen("REQ_PC_PWR");
   WOL.sendMagicPacket(KLM_MACAddress);
   delay(500);
@@ -294,9 +299,6 @@ void setup() {
   noTone(buzzer_pin);
   delay(500);
 
-  bootScreen("NETWORK");
-  checkWiFiConnection();
-
   tone(buzzer_pin, NOTE_C6);
   bootScreen("RST_READER");
   for (int i = 0; i < 3; i++) {
@@ -305,7 +307,6 @@ void setup() {
   }
   testCardReader();
   noTone(buzzer_pin);
-
 
   bootScreen("DEFAULTS");
   currentVolume = map(25, 0, 100, minimumVolume, maximumVolume);
@@ -383,7 +384,7 @@ void setup() {
   server.on("/fan/set", [=]() {
     String response = "UNCHANGED";
     if (activeCooldownTimer >= 0) {
-      response = "INHIBIT: COOLING DOWN"
+      response = "INHIBIT: COOLING DOWN";
     } else {
       int fanSpeed = -1;
       if (server.hasArg("percent")) {
@@ -404,7 +405,7 @@ void setup() {
   server.on("/fan/reset", [=]() {
     String response = "OK";
     if (activeCooldownTimer >= 0) {
-      response = "INHIBIT: COOLING DOWN"
+      response = "INHIBIT: COOLING DOWN";
     } else {
       if (currentPowerState0 == 0) {
         setChassisFanSpeed(50);
@@ -764,7 +765,7 @@ void setup() {
     if (ultraPowerSaving == false) {
       resetInactivityTimer();
       ultraPowerSaving = true;
-      if (currentPowerState0 === -1) {
+      if (currentPowerState0 == -1) {
         powerInactivityMillis = 0;
       }
       server.send(200, "text/plain", "OK");
@@ -776,7 +777,7 @@ void setup() {
     if (ultraPowerSaving == false) {
       resetInactivityTimer();
       ultraPowerSaving = true;
-      if (currentPowerState0 === -1) {
+      if (currentPowerState0 == -1) {
         powerInactivityMillis = millis();
       }
       server.send(200, "text/plain", "OK");
@@ -979,6 +980,16 @@ void setup() {
                     NULL,        /* parameter of the task */
                     20,           /* priority of the task */
                     &Task8,      /* Task handle to keep track of created task */
+                    0);          /* pin task to core 1 */
+  delay(101);
+  bootScreen("TASK_DLPM");
+  xTaskCreatePinnedToCore(
+                    powerManagerLoop,   /* Task function. */
+                    "powerManager",     /* name of task. */
+                    10000,       /* Stack size of task */
+                    NULL,        /* parameter of the task */
+                    20,           /* priority of the task */
+                    &Task10,      /* Task handle to keep track of created task */
                     0);          /* pin task to core 1 */
   delay(101);
   bootScreen("TASK_IR");
@@ -1376,10 +1387,10 @@ void nuControlRXLoop( void * pvParameters ) {
 }
 void powerManagerLoop( void * pvParameters ) {
   for(;;) {
-    if (ultraPowerSaving === true && currentPowerState0 === -1 && powerInactivityMillis !== -1 && shutdownPCTimer === 0) {
+    if (ultraPowerSaving == true && currentPowerState0 == -1 && powerInactivityMillis != -1 && shutdownPCTimer == 0) {
       unsigned long currentMillis = millis();
       if ((currentMillis - powerInactivityMillis) >= (powerOffDelayMinTimeout * 60000)) {
-        while (shutdownPCTimer !== 2) {
+        while (shutdownPCTimer != 2) {
           Serial.println("");
           Serial.println("DLPM::POWER_OFF");
           Serial.println("");
@@ -1389,7 +1400,7 @@ void powerManagerLoop( void * pvParameters ) {
       } else {
         delay(60000);
       }
-    } else if (ultraPowerSaving === false && currentPowerState0 === -1 && shutdownPCTimer !== 0) {
+    } else if (ultraPowerSaving == false && currentPowerState0 == -1 && shutdownPCTimer != 0) {
       powerOnManager();
     } else {
       delay(60000);
@@ -2428,11 +2439,11 @@ void resetInactivityTimer() {
   resetState();
 }
 void powerOnManager() {
-  if (ultraPowerSaving === true && currentPowerState0 === -2 && shutdownPCTimer !== 0) {
+  if (ultraPowerSaving == true && currentPowerState0 == -2 && shutdownPCTimer != 0) {
     powerInactivityMillis = -1;
     tone(buzzer_pin, NOTE_CS3, 1000 / 8);
     int tryCount = 0;
-    while (shutdownPCTimer !== 0) {
+    while (shutdownPCTimer != 0) {
       WOL.sendMagicPacket(KLM_MACAddress);
       delay(1000);
       tone(buzzer_pin, (tryCount % 2 == 0) ? NOTE_GS3 : NOTE_CS3, 1000 / 8);
@@ -2695,10 +2706,10 @@ void kioskCommand() {
               }
             } else if (header == "PING") {
               Serial.println("R::PONG");
-              if (shutdownPCTimer !== 0) {
+              if (shutdownPCTimer != 0) {
                 shutdownPCTimer = 0;
-                if (currentPowerState0 === -2) {
-                  currentPowerState0 === -1;
+                if (currentPowerState0 == -2) {
+                  currentPowerState0 == -1;
                 }
                 powerInactivityMillis = -1;
               }
