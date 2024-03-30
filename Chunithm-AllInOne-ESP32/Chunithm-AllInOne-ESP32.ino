@@ -9,10 +9,15 @@
 #include <IRremote.hpp>
 #include <HTTPClient.h>
 #include "melody.h"
+#include <WiFiUdp.h>
+#include <WakeOnLan.h>
 
 const char* ssid = "Radio Noise AX";
 const char* password = "Radio Noise AX";
+const char* KLM_MACAddress = "3C:52:82:58:B4:71"; // Lifecycle Manager PC Mac Address
 WebServer server(80);
+WiFiUDP UDP;
+WakeOnLan WOL(UDP);
 
 // ETHERNET PHY DIGITAL SWITCH
 // WACCA "0" - PURPLE RED ZIP TIE (Sensor) WHITE (SELECT)
@@ -146,6 +151,7 @@ bool muteVolume = false;
 int minimumVolume = 20;
 int maximumVolume = 127;
 bool inhibitNuState = false;
+bool ultraPowerSaving = false;
 int currentGameSelected0 = -1;
 int currentNuPowerState0 = -1;
 int currentALLSState0 = -1;
@@ -200,6 +206,7 @@ void setup() {
   Serial.begin(115200);
   u8g2.begin();
   u8g2.enableUTF8Print();
+  WOL.setRepeat(3, 100);
   bootScreen("HARDWARE");
   pinMode(fanPWM, OUTPUT);
   pinMode(displayMainLDR, INPUT);
@@ -256,6 +263,10 @@ void setup() {
     delay(100);
   }
   nuResponse = "";
+
+  bootScreen("REQ_PC_PWR");
+  WOL.sendMagicPacket(KLM_MACAddress);
+  delay(500);
 
   bootScreen("PC_LINK");
   xTaskCreatePinnedToCore(
