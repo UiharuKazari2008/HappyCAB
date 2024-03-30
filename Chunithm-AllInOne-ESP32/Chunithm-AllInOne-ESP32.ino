@@ -1515,7 +1515,7 @@ String getGameSelect() {
       assembledOutput = "New+";
       break;
     case 13:
-      assembledOutput = "Lumi";
+      assembledOutput = "Luminous";
       break;
     case 20:
       assembledOutput = "PDA:FT";
@@ -2150,7 +2150,7 @@ void setGameDisk(int number) {
     }
   }
   messageIcon = 129;
-  messageText = "HDD: ";
+  messageText = "GDD: ";
   switch (number) {
     case 0:
       messageText += "PL Omni (Nu)";
@@ -2174,7 +2174,7 @@ void setGameDisk(int number) {
       messageText += "Sun+ (ALLS)";
       break;
     case 12:
-      messageText += "Sun+E (ALLS)";
+      messageText += "Sun+ Ex (ALLS)";
       break;
     case 11:
       messageText += "New+ (ALLS)";
@@ -2263,13 +2263,15 @@ void triggerLEDUpdate() {
         req += "0040FF 003FFF 003EFF 003DFF 003CFF 003BFF 003AFF 0039FF 0038FF 0037FF 0036FF 0035FF 0034FF 0033FF 0032FF 0031FF 0030FF 002FFF 002EFF 002DFF 002CFF 002BFF 002AFF 0329FF 0927FF 1025FF 1623FF 1C22FF 2220FF 281EFF 2F1CFF 351AFF 3B18FF 4116FF 4815FF 4E13FF 5411FF 5A0FFF 600DFF 670BFF 6D09FF 7307FF 7906FF 8004FF 8602FF::";
         break;
       case 10:
-      case 12:
         // Sun
         req += "48CAFF::";
+      case 12:
+        // Sun (Extra)
+        req += "FF9A47 F79E4E EFA355 E6A75B DEAC62 D6B069 CEB570 C6B977 BEBE7D B5C284 ADC78B A5CB92 9DD099 95D49F 8DD9A6 84DDAD 7CE2B4 74E6BB 6CEBC1 64EFC8 5BF4CF 53F8D6 4BFDDD 47FEE1 47FBE2 47F9E3 47F7E5 47F4E6 47F2E8 47F0E9 47EDEA 47EBEC 47E9ED 47E6EE 48E4F0 48E2F1 48DFF3 48DDF4 48DAF5 48D8F7 48D6F8 48D3F9 48D1FB 48CFFC 48CCFE::";
         break;
       case 13:
-        // Lumi TODO GET JVS Colors
-        req += "48CAFF::";
+        // Luminous
+        req += "FF40A0::";
         break;
       case 11:
         // New

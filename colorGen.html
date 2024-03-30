@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Gradient Color Picker</title>
+  <style>
+    body {
+      font-family: Arial, sans-serif;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100vh;
+      margin: 0;
+    }
+    #gradient-box {
+      width: 300px;
+      height: 20px;
+      margin-bottom: 20px;
+    }
+    #color-output {
+      font-size: 14px;
+      color: #333;
+    }
+  </style>
+</head>
+<body>
+  <div>
+    <label for="color1">Color 1:</label>
+    <input type="color" id="color1" value="#ff0000">
+  </div>
+  <div>
+    <label for="color3">Color 2 (Middle):</label>
+    <input type="color" id="color2" value="#0000ff">
+  </div>
+  <div>
+    <label for="color2">Color 3:</label>
+    <input type="color" id="color3" value="#00ff00">
+  </div>
+
+  <div id="gradient-box"></div>
+  <div id="color-output"></div>
+
+  <script>
+    const color1Input = document.getElementById('color1');
+    const color2Input = document.getElementById('color2');
+    const color3Input = document.getElementById('color3');
+    const gradientBox = document.getElementById('gradient-box');
+    const colorOutput = document.getElementById('color-output');
+
+    function updateGradient() {
+      const color1 = color1Input.value;
+      const color2 = color2Input.value;
+      const color3 = color3Input.value;
+
+      const gradientValues = generateGradient(color1, color2, color3, 45);
+      const gradientString = gradientValues.join(' ');
+
+      gradientBox.style.background = `linear-gradient(to right, ${gradientString})`;
+      colorOutput.textContent = `LED_DATA::255::0::${gradientString 	}::`;
+    }
+
+    function generateGradient(startColor, middleColor, endColor, steps) {
+      const startRGB = hexToRgb(startColor);
+      const middleRGB = hexToRgb(middleColor);
+      const endRGB = hexToRgb(endColor);
+
+      const delta1 = {
+        r: (middleRGB.r - startRGB.r) / (steps / 2),
+        g: (middleRGB.g - startRGB.g) / (steps / 2),
+        b: (middleRGB.b - startRGB.b) / (steps / 2)
+      };
+
+      const delta2 = {
+        r: (endRGB.r - middleRGB.r) / (steps / 2),
+        g: (endRGB.g - middleRGB.g) / (steps / 2),
+        b: (endRGB.b - middleRGB.b) / (steps / 2)
+      };
+
+      const gradient = Array.from({ length: steps }, (_, i) => {
+        if (i < steps / 2) {
+          const r = Math.round(startRGB.r + delta1.r * i);
+          const g = Math.round(startRGB.g + delta1.g * i);
+          const b = Math.round(startRGB.b + delta1.b * i);
+          return rgbToHex(r, g, b);
+        } else {
+          const j = i - (steps / 2);
+          const r = Math.round(middleRGB.r + delta2.r * j);
+          const g = Math.round(middleRGB.g + delta2.g * j);
+          const b = Math.round(middleRGB.b + delta2.b * j);
+          return rgbToHex(r, g, b);
+        }
+      });
+
+      return gradient;
+    }
+
+    function hexToRgb(hex) {
+      const bigint = parseInt(hex.slice(1), 16);
+      const r = (bigint >> 16) & 255;
+      const g = (bigint >> 8) & 255;
+      const b = bigint & 255;
+      return { r, g, b };
+    }
+
+    function rgbToHex(r, g, b) {
+      return `${(1 << 24 | r << 16 | g << 8 | b).toString(16).slice(1).toUpperCase()}`;
+    }
+
+    color1Input.addEventListener('input', updateGradient);
+    color2Input.addEventListener('input', updateGradient);
+
+    // Initial update
+    updateGradient();
+  </script>
+</body>
+</html>
