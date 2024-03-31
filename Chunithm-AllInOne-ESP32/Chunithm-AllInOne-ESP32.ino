@@ -125,8 +125,8 @@ const int irRecPin = 2;
 int requestedPowerState0 = -1;
 int defaultInactivityMinTimeout = 45;
 int inactivityMinTimeout = 45;
-const int shutdownDelayMinTimeout = 5;
 const int powerOffDelayMinTimeout = 3;
+const int shutdownDelayMinTimeout = 15;
 unsigned long previousInactivityMillis = 0;
 unsigned long previousShutdownMillis = 0;
 bool inactivityTimeout = false;
@@ -244,7 +244,10 @@ void setup() {
   NeoPixelR.setBrightness(255);
   IrReceiver.begin(irRecPin);
 
+  bootScreen("NETWORK");
+  checkWiFiConnection();
   tone(buzzer_pin, NOTE_C6);
+
   bootScreen("NU_CTRL_COM");
   nuControl.begin(9600, SWSERIAL_8N1, nuControlRX, nuControlTX, false);
   if (!nuControl) {
@@ -270,10 +273,6 @@ void setup() {
     delay(100);
   }
   nuResponse = "";
-
-  bootScreen("NETWORK");
-  checkWiFiConnection();
-  tone(buzzer_pin, NOTE_C6);
 
   bootScreen("REQ_PC_PWR");
   WOL.sendMagicPacket(KLM_MACAddress);
@@ -301,7 +300,6 @@ void setup() {
   noTone(buzzer_pin);
   delay(500);
 
-  tone(buzzer_pin, NOTE_C6);
   bootScreen("RST_READER");
   for (int i = 0; i < 3; i++) {
     cardReaderSerial.println("REBOOT::NO_DATA");
@@ -599,7 +597,7 @@ void setup() {
   });
 
   server.on("/power/off", [=]() {
-    server.send(200, "text/plain", (currentPowerState0 == -1) ? "UNCHNAGED" : "OK");
+    server.send(200, "text/plain", (currentPowerState0 <= -1) ? "UNCHNAGED" : "OK");
     if (currentPowerState0 > -1) {
       setMasterPowerOff();
       currentPowerState0 = -1;
@@ -1637,7 +1635,7 @@ String getGameSelect() {
 }
 String getPowerAuth() {
   String assembledOutput = "";
-  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -2) ? "Power Off" : (currentPowerState0 == -1) ? (ultraPowerSaving) ? "Master Off" : "Power Off" : (currentPowerState0 == 0) ? "Standby" : (coinEnable == false) ? "Startup" : "Active"));
+  assembledOutput += ((requestedPowerState0 != -1) ? "Warning" : ((currentPowerState0 == -2) ? "Eco Mode" : (currentPowerState0 == -1) ? "Power Off" : (currentPowerState0 == 0) ? "Standby" : (coinEnable == false) ? "Startup" : "Active"));
   return assembledOutput;
 }
 void displayVolumeMessage() {
