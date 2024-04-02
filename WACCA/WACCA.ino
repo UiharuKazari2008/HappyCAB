@@ -100,7 +100,8 @@ int boot_tone_dur[] = {
 int requestedPowerState0 = -1;
 int defaultInactivityMinTimeout = 45;
 int inactivityMinTimeout = 45;
-const int powerOffDelayMinTimeout = 15;
+int defaultPowerOffDelayMinTimeout = 35;
+int powerOffDelayMinTimeout = 35;
 const int shutdownDelayMinTimeout = 3;
 unsigned long previousInactivityMillis = 0;
 unsigned long previousShutdownMillis = 0;
@@ -127,6 +128,7 @@ int animation_state = -1;
 
 bool lockedState = false;
 bool requestPowerMgrOn = false;
+bool keepManagerAwake = false;
 bool ready_to_boot = false;
 String inputString = "";
 String attachedSoftwareCU = "Unknown";
@@ -615,7 +617,7 @@ void setup() {
     server.send(200, "text/plain", val);
   });
   server.on("/master_power", [=]() {
-    server.send(200, "text/plain", (requestedPowerState0 == 0) ? "Warning" : ((currentPowerState0 > -1) ? "Enabled" : "Disabled"));
+    server.send(200, "text/plain", (requestedPowerState0 == 0) ? "Warning" : ((currentPowerState0 > -1) ? "Enabled" : (currentPowerState0 == -2) ? "Eco" : "Disabled"));
   });
   server.on("/game_power", [=]() {
     server.send(200, "text/plain", (requestedPowerState0 >= 0) ? "Warning" : ((currentPowerState0 == 1) ? "Enabled" : "Disabled"));
@@ -641,18 +643,19 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
-  server.on("/timeout/set", [=]() {
+  server.on("/timeout/time/set", [=]() {
     String response = "UNCHANGED";
     if (server.hasArg("time")) {
       int _time = server.arg("time").toInt();
       defaultInactivityMinTimeout = _time;
       resetInactivityTimer();
+      response = "SET";
     }
     server.send(200, "text/plain", response);
   });
 
   server.on("/power_save", [=]() {
-    server.send(200, "text/plain", ((ultraPowerSaving == true) ? "ON" : "OFF"));
+    server.send(200, "text/plain", ((ultraPowerSaving == true) ? (currentPowerState0 == -2) ? "ACTIVE" : "ON" : "OFF"));
   });
   server.on("/power_save/dlpm/state", [=]() {
     server.send(200, "text/plain", ((shutdownPCTimer == 0) ? "POWER ON" : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
@@ -688,6 +691,27 @@ void setup() {
     } else {
       server.send(200, "text/plain", "UNCHANGED");
     }
+  });
+  server.on("/power_save/wake", [=]() {
+    if (shutdownPCTimer != 0) {
+      requestPowerMgrOn = true;
+    }
+    keepManagerAwake = true;
+    server.send(200, "text/plain", (shutdownPCTimer != 0) ? "POWERING ON" : "LOCKED");
+  });
+  server.on("/power_save/time/set", [=]() {
+    String response = "UNCHANGED";
+    if (server.hasArg("time")) {
+      int _time = server.arg("time").toInt();
+      powerOffDelayMinTimeout = _time;
+      response = "SET";
+    }
+    server.send(200, "text/plain", response);
+  });
+  server.on("/power_save/time/reset", [=]() {
+    String response = "RESET";
+    powerOffDelayMinTimeout = defaultPowerOffDelayMinTimeout;
+    server.send(200, "text/plain", response);
   });
 
   server.on("/marquee/on", [=]() {
@@ -1183,9 +1207,14 @@ void powerManagerLoop( void * pvParameters ) {
       powerOnManager(true);
       if (coinEnable == true) {
         kioskModeRequest((currentGameSelected0 >= 10) ? "GameRunningALLS" : "GameRunning");
+      } else if (currentPowerState0 == 0) {
+        setLEDControl(true);
+        defaultLEDState();
+        standbyLEDState();
+        kioskModeRequest("StartStandby");
       }
       requestPowerMgrOn = false;
-    }  else if (ultraPowerSaving == true && currentPowerState0 == -1 && powerInactivityMillis != -1 && shutdownPCTimer == 0) {
+    }  else if (ultraPowerSaving == true && keepManagerAwake == false && currentPowerState0 == -1 && powerInactivityMillis != -1 && shutdownPCTimer == 0) {
       unsigned long currentMillis = millis();
       if ((currentMillis - powerInactivityMillis) >= (powerOffDelayMinTimeout * 60000)) {
         lockedState = true;
@@ -1638,7 +1667,7 @@ void handleCRMessage(String inputString) {
 
 void setMasterPowerOn() {
   if (currentPowerState0 <= -1) {
-    if (currentPowerState0 == -2) {
+    if (currentPowerState0 == -2 && requestPowerMgrOn == false) {
       powerOnManager(false);
     }
     setIOPower(true);
@@ -1674,6 +1703,7 @@ void setMasterPowerOn() {
     timeoutMessage = 10;
     typeOfMessage = 1;
   }
+  keepManagerAwake = false;
   powerInactivityMillis = -1;
   requestedPowerState0 = -1;
 }
@@ -1715,6 +1745,7 @@ void setMasterPowerOff() {
     timeoutMessage = 10;
     typeOfMessage = 1;
   }
+  keepManagerAwake = false;
   powerInactivityMillis = millis();
   requestedPowerState0 = -1;
   currentPowerState0 = -1;
@@ -1768,6 +1799,7 @@ void setGameOn() {
   if (requestedPowerState0 != -1) {
     resetState();
   }
+  keepManagerAwake = false;
   powerInactivityMillis = -1;
   requestedPowerState0 = -1;
   currentPowerState0 = 1;
@@ -1811,6 +1843,7 @@ void setGameOff() {
     timeoutMessage = 10;
     typeOfMessage = 1;
   }
+  keepManagerAwake = false;
   powerInactivityMillis = -1;
   currentPowerState0 = 0;
   requestedPowerState0 = -1;
