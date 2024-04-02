@@ -734,7 +734,7 @@ void setup() {
     server.send(200, "text/plain", (requestedPowerState0 == 0) ? "Warning" : ((currentPowerState0 > -1) ? "Enabled" : (currentPowerState0 == -2) ? "Eco" : "Disabled"));
   });
   server.on("/game_power", [=]() {
-    server.send(200, "text/plain", (requestedPowerState0 >= 0) ? "Warning" : ((currentPowerState0 == 1) ? "Enabled" : "Disabled"));
+    server.send(200, "text/plain", (requestedPowerState0 >= 0) ? "Warning" : ((currentPowerState0 == 1) ? "Enabled" : (currentPowerState0 == -2) ? "Eco" : "Disabled"));
   });
   server.on("/select_power", [=]() {
     server.send(200, "text/plain", (requestedPowerState0 >= 0) ? "Warning" : ((currentPowerState0 == 1) ? getGameSelect() : "Disabled"));
@@ -785,6 +785,7 @@ void setup() {
       if (currentPowerState0 == -1) {
         powerInactivityMillis = (powerInactivityMillis - (powerOffDelayMinTimeout * 60000));
       }
+      keepManagerAwake = false;
       server.send(200, "text/plain", "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
@@ -814,6 +815,9 @@ void setup() {
       requestPowerMgrOn = true;
     }
     keepManagerAwake = true;
+    if (currentPowerState0 == -2) {
+      currentPowerState0 = -1;
+    }
     server.send(200, "text/plain", (shutdownPCTimer != 0) ? "POWERING ON" : "LOCKED");
   });
   server.on("/power_save/time/set", [=]() {
