@@ -125,8 +125,8 @@ const int irRecPin = 2;
 int requestedPowerState0 = -1;
 int defaultInactivityMinTimeout = 45;
 int inactivityMinTimeout = 45;
-const int powerOffDelayMinTimeout = 3;
-const int shutdownDelayMinTimeout = 15;
+const int powerOffDelayMinTimeout = 15;
+const int shutdownDelayMinTimeout = 3;
 unsigned long previousInactivityMillis = 0;
 unsigned long previousShutdownMillis = 0;
 bool inactivityTimeout = false;
@@ -146,6 +146,7 @@ bool invertMessage = false;
 int timeoutMessage = 0;
 
 bool lockedState = false;
+bool requestPowerMgrOn = false;
 bool ready_to_boot = false;
 String inputString = "";
 String attachedSoftwareCU = "Unknown";
@@ -181,6 +182,7 @@ TaskHandle_t Task7;
 TaskHandle_t Task8;
 TaskHandle_t Task9;
 TaskHandle_t Task10;
+TaskHandle_t Task11;
 
 String remoteLEDTrigger = "http://192.168.100.62:3001/button-streamdeck2?event=long-press";
 
@@ -243,9 +245,6 @@ void setup() {
   NeoPixelL.setBrightness(255);
   NeoPixelR.setBrightness(255);
   IrReceiver.begin(irRecPin);
-
-  bootScreen("NETWORK");
-  checkWiFiConnection();
   tone(buzzer_pin, NOTE_C6);
 
   bootScreen("NU_CTRL_COM");
@@ -274,6 +273,10 @@ void setup() {
   }
   nuResponse = "";
 
+  bootScreen("NETWORK");
+  checkWiFiConnection();
+  tone(buzzer_pin, NOTE_C6);
+
   bootScreen("REQ_PC_PWR");
   WOL.sendMagicPacket(KLM_MACAddress);
   delay(500);
@@ -288,6 +291,7 @@ void setup() {
                     &Task3,      /* Task handle to keep track of created task */
                     0);          /* pin task to core 1 */
   kioskTest();
+  tone(buzzer_pin, NOTE_C6);
 
   bootScreen("CARD_LINK");
   cardReaderSerial.begin(9600, SERIAL_8N1, 16, 17);
@@ -297,7 +301,7 @@ void setup() {
       delay (1000);
     }
   }
-  noTone(buzzer_pin);
+  tone(buzzer_pin, NOTE_C6);
   delay(500);
 
   bootScreen("RST_READER");
@@ -723,7 +727,7 @@ void setup() {
     server.send(200, "text/plain", val);
   });
   server.on("/master_power", [=]() {
-    server.send(200, "text/plain", (requestedPowerState0 == 0) ? "Warning" : ((currentPowerState0 != -1) ? "Enabled" : "Disabled"));
+    server.send(200, "text/plain", (requestedPowerState0 == 0) ? "Warning" : ((currentPowerState0 > -1) ? "Enabled" : "Disabled"));
   });
   server.on("/game_power", [=]() {
     server.send(200, "text/plain", (requestedPowerState0 >= 0) ? "Warning" : ((currentPowerState0 == 1) ? "Enabled" : "Disabled"));
@@ -769,14 +773,12 @@ void setup() {
     server.send(200, "text/plain", ((shutdownPCTimer == 0) ? "POWER ON" : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
   });
   server.on("/power_save/dlpm/timeout", [=]() {
-    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? String((millis() - powerInactivityMillis) / 60000) : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 1) ? "POWER OFF" : "????"));
+    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? String((millis() - powerInactivityMillis) / 60000) : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
   });
   server.on("/power_save/force", [=]() {
-    if (ultraPowerSaving == false) {
-      resetInactivityTimer();
-      ultraPowerSaving = true;
+    if (ultraPowerSaving == true) {
       if (currentPowerState0 == -1) {
-        powerInactivityMillis = 0;
+        powerInactivityMillis = (powerInactivityMillis - (powerOffDelayMinTimeout * 60000));
       }
       server.send(200, "text/plain", "OK");
     } else {
@@ -785,7 +787,6 @@ void setup() {
   });
   server.on("/power_save/on", [=]() {
     if (ultraPowerSaving == false) {
-      resetInactivityTimer();
       ultraPowerSaving = true;
       if (currentPowerState0 == -1) {
         powerInactivityMillis = millis();
@@ -1333,7 +1334,6 @@ void cardReaderRXLoop( void * pvParameters ) {
         if (c == '\n') {
           if (!receivedMessage.isEmpty()) {
             handleCRMessage(receivedMessage);
-            //Serial.println("Received: " + receivedMessage);
           }
           receivedMessage = "";
         } else {
@@ -1397,7 +1397,13 @@ void nuControlRXLoop( void * pvParameters ) {
 }
 void powerManagerLoop( void * pvParameters ) {
   for(;;) {
-    if (ultraPowerSaving == true && currentPowerState0 == -1 && powerInactivityMillis != -1 && shutdownPCTimer == 0) {
+    if (ultraPowerSaving == true && requestPowerMgrOn == true) {
+      powerOnManager(true);
+      if (coinEnable == true) {
+        kioskModeRequest((currentGameSelected0 >= 10) ? "GameRunningALLS" : "GameRunning");
+      }
+      requestPowerMgrOn = false;
+    } else if (ultraPowerSaving == true && currentPowerState0 == -1 && powerInactivityMillis != -1 && shutdownPCTimer == 0) {
       unsigned long currentMillis = millis();
       if ((currentMillis - powerInactivityMillis) >= (powerOffDelayMinTimeout * 60000)) {
         lockedState = true;
@@ -1415,10 +1421,10 @@ void powerManagerLoop( void * pvParameters ) {
         delay(60000);
       }
     } else if (ultraPowerSaving == false && currentPowerState0 == -2 && shutdownPCTimer != 0) {
-      powerOnManager();
+      powerOnManager(false);
       delay(5000);
     } else {
-      delay(60000);
+      delay(500);
     }
   }
 }
@@ -1985,7 +1991,7 @@ void handleCRMessage(String inputString) {
 void setMasterPowerOn() {
   if (currentPowerState0 <= -1) {
     if (currentPowerState0 == -2) {
-      powerOnManager();
+      powerOnManager(false);
     }
     setIOPower(true);
     delay(250);
@@ -2069,8 +2075,8 @@ void setMasterPowerOff() {
 }
 void setGameOn() {
   if (currentPowerState0 <= -1) {
-    if (currentPowerState0 == -2) {
-      powerOnManager();
+    if (currentPowerState0 == -2 && currentGameSelected0 < 10) {
+      requestPowerMgrOn = true;
     }
     setIOPower(true);
     delay(1000);
@@ -2085,18 +2091,22 @@ void setGameOn() {
     inactivityMinTimeout = defaultInactivityMinTimeout + 5;
     previousInactivityMillis = millis();
     setTouchControl((currentGameSelected0 < 10));
-    if (currentGameSelected0 < 20) {
+    resetPSU();
+    startingLEDState();
+    setMarqueeState(true, false);
+    setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
+    if (currentPowerState0 == -2 && currentGameSelected0 > 10) {
+      powerOnManager(true);
+    } else if (requestPowerMgrOn == true) {
+      setDisplayState(currentGameSelected0 > 10);
+    } else if (currentGameSelected0 < 20) {
       startLoadingScreen();
     } else {
       pending_alls_good_response = true;
       setDisplayState(true);
     }
     setSysBoardPower(true);
-    resetPSU();
-    startingLEDState();
-    setMarqueeState(true, false);
-    setChassisFanSpeed((currentGameSelected0 < 10) ? 75 : 100);
-
+    
     pending_release_display = (currentGameSelected0 < 10);
 
     messageIcon = 96;
@@ -2164,10 +2174,12 @@ void setGameOff() {
   requestedPowerState0 = -1;
   triggerLEDUpdate();
 }
-void powerOnManager() {
+void powerOnManager(bool beeper_disable) {
   if (ultraPowerSaving == true && shutdownPCTimer != 0) {
     powerInactivityMillis = -1;
-    tone(buzzer_pin, NOTE_CS3, 1000 / 8);
+    if (!beeper_disable) {
+      tone(buzzer_pin, NOTE_CS3, 1000 / 8);
+    }
     int tryCount = 0;
     lockedState = false;
     while (shutdownPCTimer != 0) {
@@ -2176,14 +2188,21 @@ void powerOnManager() {
       Serial.println("");
       WOL.sendMagicPacket(KLM_MACAddress);
       delay(1000);
-      tone(buzzer_pin, (tryCount % 2 == 0) ? NOTE_GS3 : NOTE_CS3, 1000 / 8);
+      if (!beeper_disable) {
+        tone(buzzer_pin, (tryCount % 2 == 0) ? NOTE_GS3 : NOTE_CS3, 1000 / 8);
+      }
       tryCount++;
     }
     delay(500);
     Serial.println("");
     Serial.println("PROBE::SEARCH");
     Serial.println("");
-    noTone(buzzer_pin);
+    if (!beeper_disable) {
+      noTone(buzzer_pin);
+    }
+    if (currentGameSelected0 > 10) {
+      ALLSCtrl("DS", String(currentGameSelected0));
+    }
   }
 }
 void requestPowerOff() {
