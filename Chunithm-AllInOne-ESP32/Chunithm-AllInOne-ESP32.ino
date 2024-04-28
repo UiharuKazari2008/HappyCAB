@@ -130,7 +130,7 @@ int powerOffDelayMinTimeout = 35;
 int shutdownDelayMinTimeout = 3;
 unsigned long previousInactivityMillis = 0;
 unsigned long previousShutdownMillis = 0;
-bool inactivityTimeout = false;
+bool inactivityTimeout = true;
 
 const int nuPostCooldownMinTimeout = 5;
 const int allsPostCooldownMinTimeout = 10;
@@ -157,7 +157,7 @@ bool muteVolume = false;
 int minimumVolume = 20;
 int maximumVolume = 127;
 bool inhibitNuState = false;
-bool ultraPowerSaving = false;
+bool ultraPowerSaving = true;
 int shutdownPCTimer = 0;
 unsigned long powerInactivityMillis = 0;
 unsigned long lastPingMillis = 0;
@@ -310,8 +310,37 @@ void setup() {
     delay(100);
   }
   testCardReader();
-  noTone(buzzer_pin);
 
+  bootScreen("CHK_HDMI");
+  if (digitalRead(displayMainLDR) != LOW) {
+    digitalWrite(displayMainSelect, HIGH);
+    digitalWrite(displayMainSelect, LOW);
+    delay(500);
+    digitalWrite(displayMainSelect, HIGH);
+  }
+  digitalWrite(controlRelays[1], HIGH);
+  for (int i = 0; i < 3; i++) {
+    nuControl.println("PS::1");
+    delay(100);
+  }
+  delay(6000);
+  if (digitalRead(displayMainLDR) != LOW) {
+    bootScreen("HDMI_FIX");
+    digitalWrite(displayMainSelect, HIGH);
+    digitalWrite(displayMainSelect, LOW);
+    delay(5000);
+    digitalWrite(displayMainSelect, HIGH);
+  } else {
+    bootScreen("HDMI_OK");
+    delay(1000);
+  }
+  digitalWrite(controlRelays[1], LOW);
+  for (int i = 0; i < 3; i++) {
+    nuControl.println("PS::0");
+    delay(100);
+  }
+
+  noTone(buzzer_pin);
   bootScreen("DEFAULTS");
   currentVolume = map(25, 0, 100, minimumVolume, maximumVolume);
   ds3502.setWiper(currentVolume);
@@ -774,23 +803,6 @@ void setup() {
   server.on("/power_save", [=]() {
     server.send(200, "text/plain", ((ultraPowerSaving == true) ? (currentPowerState0 == -2) ? "ACTIVE" : "ON" : "OFF"));
   });
-  server.on("/power_save/dlpm/state", [=]() {
-    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? "POWER ON" : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
-  });
-  server.on("/power_save/dlpm/timeout", [=]() {
-    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? String((millis() - powerInactivityMillis) / 60000) : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
-  });
-  server.on("/power_save/force", [=]() {
-    if (ultraPowerSaving == true) {
-      if (currentPowerState0 == -1) {
-        powerInactivityMillis = (powerInactivityMillis - (powerOffDelayMinTimeout * 60000));
-      }
-      keepManagerAwake = false;
-      server.send(200, "text/plain", "OK");
-    } else {
-      server.send(200, "text/plain", "UNCHANGED");
-    }
-  });
   server.on("/power_save/on", [=]() {
     if (ultraPowerSaving == false) {
       ultraPowerSaving = true;
@@ -810,19 +822,57 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
+  server.on("/power_save/dlpm/state", [=]() {
+    if (ultraPowerSaving == false)
+    server.send(200, "text/plain", ((ultraPowerSaving == false) ? "DISABLED" : (shutdownPCTimer == 0) ? "POWER ON" : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
+  });
+  server.on("/power_save/dlpm/timeout", [=]() {
+    server.send(200, "text/plain", ((ultraPowerSaving == false) ? "DISABLED" : (shutdownPCTimer == 0) ? String((millis() - powerInactivityMillis) / 60000) : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
+  });
   server.on("/power_save/wake", [=]() {
-    if (shutdownPCTimer != 0) {
-      requestPowerMgrOn = true;
+    if (ultraPowerSaving == false) {
+      if (shutdownPCTimer != 0) {
+        requestPowerMgrOn = true;
+        keepManagerAwake = true;
+      }
+      if (currentPowerState0 == -2) {
+        currentPowerState0 = -1;
+      }
+      server.send(200, "text/plain", (shutdownPCTimer != 0) ? "POWERING ON" : "UNCHANGED");
+    } else {
+      server.send(200, "text/plain", "DISABLED");
     }
-    keepManagerAwake = true;
-    if (currentPowerState0 == -2) {
-      currentPowerState0 = -1;
+  });
+  server.on("/power_save/unlock", [=]() {
+    if (ultraPowerSaving == false) {
+      keepManagerAwake = false;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "DISABLED");
     }
-    server.send(200, "text/plain", (shutdownPCTimer != 0) ? "POWERING ON" : "LOCKED");
+  });
+  server.on("/power_save/lock", [=]() {
+    if (ultraPowerSaving == false) {
+      keepManagerAwake = true;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "DISABLED");
+    }
+  });
+  server.on("/power_save/force", [=]() {
+    if (ultraPowerSaving == true) {
+      if (currentPowerState0 == -1) {
+        powerInactivityMillis = (powerInactivityMillis - (powerOffDelayMinTimeout * 60000));
+      }
+      keepManagerAwake = false;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "DISABLED");
+    }
   });
   server.on("/power_save/time/set", [=]() {
     String response = "UNCHANGED";
-    if (server.hasArg("time")) {
+    if (server.hasArg("time") && ultraPowerSaving == true) {
       int _time = server.arg("time").toInt();
       powerOffDelayMinTimeout = _time;
       response = "SET";
@@ -1185,7 +1235,7 @@ void loop() {
     }
   }
   // Handle Inactivity Timer
-  if (inactivityTimeout == true && currentPowerState0 == 1 && requestedPowerState0 == -1 && ((currentMillis - previousInactivityMillis) >= (inactivityMinTimeout * 60000))) {
+  if (inactivityTimeout == true && currentGameSelected0 < 20 && currentPowerState0 == 1 && requestedPowerState0 == -1 && ((currentMillis - previousInactivityMillis) >= (inactivityMinTimeout * 60000))) {
     if (coinEnable == true || currentGameSelected0 > 19) {
       shuttingDownLEDState(1);
     } else if (coinEnable == false) {
@@ -1771,9 +1821,7 @@ void shuttingDownLEDState(int state) {
 }
 void startLoadingScreen() {
   pending_release_display = true;
-  if (currentGameSelected0 < 20) {
-    kioskModeRequest((currentGameSelected0 >= 10) ? "StartALLSGame" : "StartGame");
-  }
+  kioskModeRequest((currentGameSelected0 >= 10) ? "StartALLSGame" : "StartGame");
   setDisplayState(true);
 }
 
@@ -2142,11 +2190,12 @@ void setGameOn() {
       }
     } else if (requestPowerMgrOn == true) {
       setDisplayState(currentGameSelected0 > 10);
-    } else if (currentGameSelected0 < 20) {
-      startLoadingScreen();
     } else {
-      pending_alls_good_response = true;
-      setDisplayState(true);
+      startLoadingScreen();
+      if (currentGameSelected0 >= 20) {
+        pending_alls_good_response = true;
+        setDisplayState(true);
+      }
     }
     setSysBoardPower(true);
     
@@ -2246,7 +2295,7 @@ void powerOnManager(bool beeper_disable) {
       noTone(buzzer_pin);
     }
     if (currentGameSelected0 > 10) {
-      ALLSCtrl("DS", String(currentGameSelected0));
+      ALLSCtrl("DS", "PULL_ID");
     }
   }
 }
@@ -2337,7 +2386,7 @@ void setGameDisk(int number) {
     // ALLS Switchover
     inhibitNuState = true;
     currentGameSelected0 = number;
-    ALLSCtrl("DS", String(number));
+    ALLSCtrl("DS", "PULL_ID");
     if (currentPowerState0 == 1) {
       allsOK = false;
       pending_alls_good_response = (currentGameSelected0 == 20);
@@ -2698,6 +2747,8 @@ void kioskCommand() {
               String valueString = receivedMessage.substring(headerIndex + 2, valueIndex);
               if (valueString == "?") {
                 Serial.println("R::" + getGameSelect());
+              } else if (valueString == "ID") {
+                Serial.println("R::" + String(currentGameSelected0));
               } else {
                 int valueInt = valueString.toInt();
                 setGameDisk(valueInt);

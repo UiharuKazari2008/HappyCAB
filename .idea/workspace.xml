@@ -19,9 +19,7 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="0eba71ed-31f3-4908-85aa-067771701745" name="Changes" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/discord.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/discord.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/Chunithm-AllInOne-ESP32/Chunithm-AllInOne-ESP32.ino" beforeDir="false" afterPath="$PROJECT_DIR$/Chunithm-AllInOne-ESP32/Chunithm-AllInOne-ESP32.ino" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/WACCA/WACCA.ino" beforeDir="false" afterPath="$PROJECT_DIR$/WACCA/WACCA.ino" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/shelf/Uncommitted_changes_before_Update_at_2024_03_23_14_41_[Changes]/shelved.patch" beforeDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -94,6 +92,7 @@
       <workItem from="1698889677233" duration="594000" />
       <workItem from="1711219486313" duration="66000" />
       <workItem from="1712299792290" duration="5000" />
+      <workItem from="1712299844438" duration="33000" />
     </task>
     <servers />
   </component>

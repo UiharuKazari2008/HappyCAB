@@ -137,7 +137,7 @@ bool muteVolume = false;
 int minimumVolume = 10;
 int maximumVolume = 127;
 bool inhibitNuState = false;
-bool ultraPowerSaving = false;
+bool ultraPowerSaving = true;
 int shutdownPCTimer = 0;
 unsigned long powerInactivityMillis = 0;
 unsigned long lastPingMillis = 0;
@@ -284,8 +284,43 @@ void setup() {
     delay(100);
   }
   testCardReader();
-  noTone(buzzer_pin);
 
+  bootScreen("CHK_HDMI");
+  if (digitalRead(displayMainLDR) != LOW) {
+    digitalWrite(displayMainSelect, HIGH);
+    digitalWrite(displayMainSelect, LOW);
+    delay(500);
+    digitalWrite(displayMainSelect, HIGH);
+  }
+  digitalWrite(relayPins[3], HIGH);
+  digitalWrite(relayPins[4], LOW);
+  for (int i = 0; i < 3; i++) {
+    nuControl.println("DS::0");
+    delay(100);
+  }
+  for (int i = 0; i < 3; i++) {
+    nuControl.println("PS::1");
+    delay(100);
+  }
+  delay(6000);
+  if (digitalRead(displayMainLDR) != LOW) {
+    bootScreen("HDMI_FIX");
+    digitalWrite(displayMainSelect, HIGH);
+    digitalWrite(displayMainSelect, LOW);
+    delay(5000);
+    digitalWrite(displayMainSelect, HIGH);
+  } else {
+    bootScreen("HDMI_OK");
+    delay(1000);
+  }
+  digitalWrite(relayPins[3], LOW);
+  digitalWrite(relayPins[4], LOW);
+  for (int i = 0; i < 3; i++) {
+    nuControl.println("PS::0");
+    delay(100);
+  }
+
+  noTone(buzzer_pin);
   bootScreen("DEFAULTS");
   currentVolume = map(25, 0, 100, minimumVolume, maximumVolume);
   ds3502.setWiper(currentVolume);
@@ -660,23 +695,6 @@ void setup() {
   server.on("/power_save", [=]() {
     server.send(200, "text/plain", ((ultraPowerSaving == true) ? (currentPowerState0 == -2) ? "ACTIVE" : "ON" : "OFF"));
   });
-  server.on("/power_save/dlpm/state", [=]() {
-    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? "POWER ON" : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
-  });
-  server.on("/power_save/dlpm/timeout", [=]() {
-    server.send(200, "text/plain", ((shutdownPCTimer == 0) ? String((millis() - powerInactivityMillis) / 60000) : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 1) ? "POWER OFF" : "????"));
-  });
-  server.on("/power_save/force", [=]() {
-    if (ultraPowerSaving == true) {
-      if (currentPowerState0 == -1) {
-        powerInactivityMillis = (powerInactivityMillis - (powerOffDelayMinTimeout * 60000));
-      }
-      keepManagerAwake = false;
-      server.send(200, "text/plain", "OK");
-    } else {
-      server.send(200, "text/plain", "UNCHANGED");
-    }
-  });
   server.on("/power_save/on", [=]() {
     if (ultraPowerSaving == false) {
       ultraPowerSaving = true;
@@ -696,19 +714,57 @@ void setup() {
       server.send(200, "text/plain", "UNCHANGED");
     }
   });
+  server.on("/power_save/dlpm/state", [=]() {
+    if (ultraPowerSaving == false)
+    server.send(200, "text/plain", ((ultraPowerSaving == false) ? "DISABLED" : (shutdownPCTimer == 0) ? "POWER ON" : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
+  });
+  server.on("/power_save/dlpm/timeout", [=]() {
+    server.send(200, "text/plain", ((ultraPowerSaving == false) ? "DISABLED" : (shutdownPCTimer == 0) ? String((millis() - powerInactivityMillis) / 60000) : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
+  });
   server.on("/power_save/wake", [=]() {
-    if (shutdownPCTimer != 0) {
-      requestPowerMgrOn = true;
+    if (ultraPowerSaving == false) {
+      if (shutdownPCTimer != 0) {
+        requestPowerMgrOn = true;
+        keepManagerAwake = true;
+      }
+      if (currentPowerState0 == -2) {
+        currentPowerState0 = -1;
+      }
+      server.send(200, "text/plain", (shutdownPCTimer != 0) ? "POWERING ON" : "UNCHANGED");
+    } else {
+      server.send(200, "text/plain", "DISABLED");
     }
-    keepManagerAwake = true;
-    if (currentPowerState0 == -2) {
-      currentPowerState0 = -1;
+  });
+  server.on("/power_save/unlock", [=]() {
+    if (ultraPowerSaving == false) {
+      keepManagerAwake = false;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "DISABLED");
     }
-    server.send(200, "text/plain", (shutdownPCTimer != 0) ? "POWERING ON" : "LOCKED");
+  });
+  server.on("/power_save/lock", [=]() {
+    if (ultraPowerSaving == false) {
+      keepManagerAwake = true;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "DISABLED");
+    }
+  });
+  server.on("/power_save/force", [=]() {
+    if (ultraPowerSaving == true) {
+      if (currentPowerState0 == -1) {
+        powerInactivityMillis = (powerInactivityMillis - (powerOffDelayMinTimeout * 60000));
+      }
+      keepManagerAwake = false;
+      server.send(200, "text/plain", "OK");
+    } else {
+      server.send(200, "text/plain", "DISABLED");
+    }
   });
   server.on("/power_save/time/set", [=]() {
     String response = "UNCHANGED";
-    if (server.hasArg("time")) {
+    if (server.hasArg("time") && ultraPowerSaving == true) {
       int _time = server.arg("time").toInt();
       powerOffDelayMinTimeout = _time;
       response = "SET";
