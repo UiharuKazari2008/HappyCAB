@@ -830,7 +830,7 @@ void setup() {
     server.send(200, "text/plain", ((ultraPowerSaving == false) ? "DISABLED" : (shutdownPCTimer == 0) ? String((millis() - powerInactivityMillis) / 60000) : (shutdownPCTimer == 1) ? "REBOOTING" : (shutdownPCTimer == 2) ? "POWER OFF" : "????"));
   });
   server.on("/power_save/wake", [=]() {
-    if (ultraPowerSaving == false) {
+    if (ultraPowerSaving == true) {
       if (shutdownPCTimer != 0) {
         requestPowerMgrOn = true;
         keepManagerAwake = true;
@@ -844,7 +844,7 @@ void setup() {
     }
   });
   server.on("/power_save/unlock", [=]() {
-    if (ultraPowerSaving == false) {
+    if (ultraPowerSaving == true) {
       keepManagerAwake = false;
       server.send(200, "text/plain", "OK");
     } else {
@@ -852,7 +852,7 @@ void setup() {
     }
   });
   server.on("/power_save/lock", [=]() {
-    if (ultraPowerSaving == false) {
+    if (ultraPowerSaving == true) {
       keepManagerAwake = true;
       server.send(200, "text/plain", "OK");
     } else {
