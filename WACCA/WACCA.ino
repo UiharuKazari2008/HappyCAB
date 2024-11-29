@@ -960,6 +960,33 @@ void setup() {
   startMelody = true;
 }
 
+const int DEBOUNCE_COUNT = 4;  // Number of consistent readings required
+int stateBuffer[DEBOUNCE_COUNT] = {0};  // Buffer to store recent readings
+int bufferIndex = 0;                   // Current index in the buffer
+
+void updateDisplayMainState() {
+    // Read the current value
+    int currentState = (digitalRead(displayMainLDR) == LOW) ? 1 : 0;
+
+    // Update the buffer
+    stateBuffer[bufferIndex] = currentState;
+    bufferIndex = (bufferIndex + 1) % DEBOUNCE_COUNT;
+
+    // Check if all values in the buffer are the same
+    bool consistent = true;
+    for (int i = 1; i < DEBOUNCE_COUNT; i++) {
+        if (stateBuffer[i] != stateBuffer[0]) {
+            consistent = false;
+            break;
+        }
+    }
+
+    // If consistent, update the final state
+    if (consistent) {
+        displayMainState = (stateBuffer[0] == 1);
+    }
+}
+
 void loop() {
   checkWiFiConnection();
   server.handleClient();
@@ -976,7 +1003,7 @@ void loop() {
     startingLEDState();
   }
   // Handle Display Handover
-  displayMainState = (digitalRead(displayMainLDR) == LOW);
+  updateDisplayMainState();
   if (pending_release_display == true && coinEnable == true) {
     pending_release_display = false;
     kioskModeRequest("GameRunning");
