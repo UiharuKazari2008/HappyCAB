@@ -1749,6 +1749,8 @@ void setMasterPowerOn() {
     } else {
       setSysBoardPower(false);
     }
+    delay(2000);
+    setDisplayState(true);
     currentPowerState0 = 0;
 
     pending_release_leds = false;
@@ -1842,6 +1844,8 @@ void setGameOn() {
     }
     setDisplayState(true);
     setSysBoardPower(true);
+    delay(2000);
+    setDisplayState(true);
 
     melodyPlay = 0;
     loopMelody = -1;
@@ -1891,6 +1895,8 @@ void setGameOff() {
     } else {
       setSysBoardPower(false);
     }
+    delay(2000);
+    setDisplayState(true);
 
     loopMelody = -1;
     melodyPlay = 1;
@@ -2041,7 +2047,7 @@ void resetMarqueeState() {
   digitalWrite(relayPins[5], (currentMarqueeState == 1) ? HIGH : LOW);
 }
 void setMarqueeState(bool state, bool save) {
-  if (currentPowerState0 != -1) {
+  if (currentPowerState0 == 0) {
     digitalWrite(relayPins[5], (state == true) ? HIGH : LOW);
   }
   if (save == true) {

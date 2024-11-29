@@ -613,8 +613,24 @@ void setup() {
     }
   });
   server.on("/select/game/lumi", [=]() {
+    if (currentGameSelected0 != 14) {
+      setGameDisk(14);
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/select/game/lumi_extra", [=]() {
     if (currentGameSelected0 != 13) {
       setGameDisk(13);
+      server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
+    } else {
+      server.send(200, "text/plain", "UNCHANGED");
+    }
+  });
+  server.on("/select/game/lumi_plus_extra", [=]() {
+    if (currentGameSelected0 != 15) {
+      setGameDisk(15);
       server.send(200, "text/plain", (currentPowerState0 == 1) ? "REBOOTING" : "OK");
     } else {
       server.send(200, "text/plain", "UNCHANGED");
@@ -1712,8 +1728,14 @@ String getGameSelect() {
     case 11:
       assembledOutput = "New+";
       break;
-    case 13:
+    case 14:
       assembledOutput = "Luminous";
+      break;
+    case 13:
+      assembledOutput = "Lumi E";
+      break;
+    case 15:
+      assembledOutput = "Lumi+ E";
       break;
     case 20:
       assembledOutput = "PDA:FT";
@@ -2350,7 +2372,7 @@ void resetMarqueeState() {
   digitalWrite(controlRelays[2], (currentMarqueeState == 1) ? HIGH : LOW);
 }
 void setMarqueeState(bool state, bool save) {
-  if (currentPowerState0 <= -1) {
+  if (currentPowerState0 == 0) {
     digitalWrite(controlRelays[2], (state == true) ? HIGH : LOW);
   }
   if (save == true) {
@@ -2432,6 +2454,12 @@ void setGameDisk(int number) {
       messageText += "New+ (ALLS)";
       break;
     case 13:
+      messageText += "Lumi Ex (ALLS)";
+      break;
+    case 15:
+      messageText += "Lumi+ Ex (ALLS)";
+      break;
+    case 14:
       messageText += "Lumi (ALLS)";
       break;
     case 20:
@@ -2522,6 +2550,8 @@ void triggerLEDUpdate() {
         req += "FF9A47 F79E4E EFA355 E6A75B DEAC62 D6B069 CEB570 C6B977 BEBE7D B5C284 ADC78B A5CB92 9DD099 95D49F 8DD9A6 84DDAD 7CE2B4 74E6BB 6CEBC1 64EFC8 5BF4CF 53F8D6 4BFDDD 47FEE1 47FBE2 47F9E3 47F7E5 47F4E6 47F2E8 47F0E9 47EDEA 47EBEC 47E9ED 47E6EE 48E4F0 48E2F1 48DFF3 48DDF4 48DAF5 48D8F7 48D6F8 48D3F9 48D1FB 48CFFC 48CCFE::";
         break;
       case 13:
+      case 15:
+      case 14:
         // Luminous
         req += "FF40A0::";
         break;
