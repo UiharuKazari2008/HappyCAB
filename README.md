@@ -1,3 +1,5 @@
+# [Migrated to BlueSteel](https://yozora.bluesteel.737.jp.net/UiharuKazari2008/XLink-ACC-MCU)
+
 # HappyCAB
 Personal total arcade cabinet controller based on the ESP32
 
